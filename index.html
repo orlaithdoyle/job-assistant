@@ -3,492 +3,102 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
 <title>Job Application Assistant</title>
-<style>
-  :root {
-    --bg: #faf8f4;
-    --card: #ffffff;
-    --ink: #1d1d1f;
-    --muted: #6b6b70;
-    --line: #e4e0d8;
-    --accent: #1f3a5f;
-    --accent-soft: #e8eef6;
-    --warn: #8a4b0f;
-    --warn-soft: #fbefdf;
-    --good: #2f6b3a;
-    --good-soft: #e5f2e6;
-    --bad: #8c2f2f;
-    --bad-soft: #f8e6e6;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #17171a; --card: #202024; --ink: #ecebe8; --muted: #a2a1a6;
-      --line: #34343a; --accent: #9fbbe0; --accent-soft: #24303f;
-      --warn: #f0b878; --warn-soft: #3a2c1c; --good: #8fd19b; --good-soft: #1f3324;
-      --bad: #f0a0a0; --bad-soft: #3a2222;
-    }
-  }
-  * { box-sizing: border-box; }
-  html, body, button, input, select, textarea {
-    font-family: "Times New Roman", Times, serif;
-  }
-  body { margin: 0; background: var(--bg); color: var(--ink); font-size: 17px; line-height: 1.45; }
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 60px; }
-  header h1 { font-size: 34px; font-weight: normal; margin: 0 0 4px; letter-spacing: 0.2px; }
-  header p { margin: 0; color: var(--muted); }
-  .status-line { font-size: 14px; color: var(--muted); margin-top: 6px; min-height: 20px; }
-
-  nav.tabs { display: flex; gap: 6px; margin: 22px 0 18px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  nav.tabs button {
-    background: none; border: none; padding: 10px 14px; font-size: 17px; color: var(--muted);
-    cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
-  }
-  nav.tabs button.on { color: var(--ink); border-bottom-color: var(--accent); }
-
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 22px; }
-  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; cursor: pointer; }
-  .stat:hover { border-color: var(--accent); }
-  .stat .n { font-size: 30px; }
-  .stat .l { color: var(--muted); font-size: 15px; }
-
-  h2 { font-weight: normal; font-size: 23px; margin: 26px 0 10px; }
-  .hint { color: var(--muted); font-size: 15px; margin: -4px 0 12px; }
-
-  .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
-  .toolbar input, .toolbar select {
-    font-size: 16px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
-    background: var(--card); color: var(--ink);
-  }
-  .toolbar input { flex: 1; min-width: 200px; }
-
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; margin-bottom: 12px; }
-  .card.ready { border-left: 4px solid var(--warn); }
-  .card-top { display: flex; gap: 14px; align-items: flex-start; }
-  .fit {
-    flex: none; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center;
-    font-size: 20px; border: 2px solid var(--line);
-  }
-  .fit.hi { border-color: var(--good); color: var(--good); }
-  .fit.mid { border-color: var(--accent); color: var(--accent); }
-  .fit.lo { border-color: var(--bad); color: var(--bad); }
-  .fit small { display: block; font-size: 10px; line-height: 1; color: var(--muted); text-align: center; }
-  .main { flex: 1; min-width: 0; }
-  .role { font-size: 20px; margin: 0; }
-  .org { color: var(--muted); }
-  .meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 15px; color: var(--muted); margin-top: 6px; }
-  .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-  .tag { font-size: 13px; padding: 2px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
-  .tag.warn { background: var(--warn-soft); color: var(--warn); }
-  .tag.bad { background: var(--bad-soft); color: var(--bad); }
-  .side { flex: none; text-align: right; }
-  .side select { font-size: 15px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
-  .deadline { font-size: 15px; margin-top: 6px; }
-  .deadline.soon { color: var(--warn); }
-  .deadline.past { color: var(--bad); }
-
-  details { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
-  summary { cursor: pointer; color: var(--accent); font-size: 15px; }
-  .grid2 { display: grid; grid-template-columns: 160px 1fr; gap: 6px 14px; margin-top: 10px; font-size: 16px; }
-  .grid2 .k { color: var(--muted); }
-  a { color: var(--accent); }
-  .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-  .btn {
-    display: inline-block; padding: 7px 13px; border-radius: 8px; border: 1px solid var(--line);
-    background: var(--card); color: var(--ink); text-decoration: none; font-size: 15px; cursor: pointer;
-  }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
-  textarea {
-    width: 100%; min-height: 70px; margin-top: 10px; padding: 8px 10px; font-size: 16px;
-    border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink);
-  }
-  .saved { font-size: 13px; color: var(--muted); margin-left: 6px; }
-
-  .empty { color: var(--muted); padding: 24px; text-align: center; border: 1px dashed var(--line); border-radius: 12px; }
-  .notice { background: var(--warn-soft); color: var(--warn); padding: 10px 14px; border-radius: 10px; margin: 12px 0; font-size: 15px; }
-
-  .crit { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px 22px; }
-  .crit table { border-collapse: collapse; width: 100%; margin: 8px 0 14px; }
-  .crit td, .crit th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); font-weight: normal; }
-  .crit th { color: var(--muted); }
-  .crit ul { margin: 6px 0 14px; padding-left: 20px; }
-
-  @media (max-width: 640px) {
-    .card-top { flex-wrap: wrap; }
-    .side { text-align: left; width: 100%; }
-    .grid2 { grid-template-columns: 1fr; }
-    .grid2 .k { margin-top: 6px; }
-  }
-</style>
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-<div class="wrap">
-  <header>
+
+<!-- Lock screen -->
+<div class="lock" id="lockScreen">
+  <form class="lock-box" id="lockForm" autocomplete="off">
     <h1>Job Application Assistant</h1>
-    <p>Orlaith Doyle &middot; roles found, scored and prepared for you to review</p>
-    <div class="status-line" id="statusLine">Loading your jobs&hellip;</div>
-  </header>
-
-  <nav class="tabs" id="tabs">
-    <button data-tab="overview" class="on">Overview</button>
-    <button data-tab="all">All jobs</button>
-    <button data-tab="criteria">My criteria</button>
-  </nav>
-
-  <section id="view-overview">
-    <div class="stats" id="stats"></div>
-    <h2>Ready for your review</h2>
-    <p class="hint">A CV and cover letter have been drafted for these. Nothing is sent until you say so.</p>
-    <div id="readyList"></div>
-    <h2>Coming deadlines</h2>
-    <p class="hint">Open roles with a deadline in the next 60 days, soonest first.</p>
-    <div id="deadlineList"></div>
-  </section>
-
-  <section id="view-all" hidden>
-    <div class="toolbar">
-      <input id="q" type="search" placeholder="Search role, organisation, location&hellip;">
-      <select id="fStatus"><option value="">All statuses</option></select>
-      <select id="fCat"><option value="">All categories</option></select>
-      <select id="sort">
-        <option value="fit">Sort: best fit</option>
-        <option value="deadline">Sort: deadline</option>
-        <option value="added">Sort: newest</option>
-      </select>
-      <label style="font-size:15px;color:var(--muted)"><input type="checkbox" id="hideClosed" checked> Hide rejected and not a fit</label>
-    </div>
-    <div id="allList"></div>
-  </section>
-
-  <section id="view-criteria" hidden>
-    <div class="crit">
-      <h2 style="margin-top:0">What I'm looking for</h2>
-      <table>
-        <tr><th>Role type</th><th>Minimum base salary</th></tr>
-        <tr><td>Earth observation / SAR analyst or scientist</td><td>&euro;44,000</td></tr>
-        <tr><td>Space / mission engineering and operations</td><td>&euro;44,000</td></tr>
-        <tr><td>Science engagement and programmes</td><td>&euro;50,000</td></tr>
-      </table>
-      <strong>Locations</strong>
-      <ul><li>Dublin and commutable</li><li>Netherlands and Belgium</li><li>Rest of Europe</li></ul>
-      <strong>Working arrangement</strong>
-      <ul><li>Remote or hybrid preferred</li><li>Fully in office only with travel costs and travel time covered</li></ul>
-      <strong>Contract types</strong>
-      <ul><li>Graduate and junior, mid-level as a stretch, fixed-term, PhD and research posts</li></ul>
-      <strong>How applications are handled</strong>
-      <ul>
-        <li>A daily search runs every weekday morning and adds new roles here.</li>
-        <li>Roles scoring 7 or more get a tailored CV and cover letter, and you get an email.</li>
-        <li>Only real experience goes in. Gaps are flagged, never covered up.</li>
-        <li>Nothing is sent to an employer without your approval.</li>
-        <li>Roles under your minimum salary are still shown, marked &ldquo;Below salary floor&rdquo;.</li>
-      </ul>
-    </div>
-  </section>
+    <p>Your job list is locked. Enter your password to open it.</p>
+    <input type="password" id="pw" placeholder="Password" autocomplete="current-password" required>
+    <label><input type="checkbox" id="remember"> Keep me unlocked on this device</label>
+    <button class="btn primary" type="submit" id="unlockBtn">Unlock</button>
+    <div class="lock-err" id="lockErr"></div>
+  </form>
 </div>
 
-<script>
-(function () {
-  "use strict";
+<!-- App -->
+<div id="app" hidden>
+  <div class="wrap">
+    <header class="top">
+      <div>
+        <h1>Job Application Assistant</h1>
+        <p>Orlaith Doyle &middot; roles found, scored and prepared for you to review</p>
+        <div class="status-line" id="statusLine"></div>
+      </div>
+      <div class="top-actions">
+        <button class="btn" id="settingsBtn">Settings</button>
+        <button class="btn" id="lockBtn">Lock</button>
+      </div>
+    </header>
 
-  var STATUSES = ["Ready for review", "To review", "Drafting", "Watching", "Applied", "Contacted",
-                  "Interviewing", "Offer", "Rejected", "Not a fit"];
-  var CLOSED = ["Rejected", "Not a fit"];
-  var ACTIVE_APPS = ["Applied", "Contacted", "Interviewing", "Offer"];
+    <nav class="tabs" id="tabs">
+      <button class="tab on" data-tab="overview">Overview</button>
+      <button class="tab" data-tab="all">All jobs</button>
+      <button class="tab" data-tab="profile">My profile</button>
+      <span class="spacer"></span>
+      <button class="btn small" id="addJobBtn" style="margin-bottom:6px">+ Add a job</button>
+    </nav>
 
-  var jobs = [];          // [{id, ...data}]
-  var db = null;
-  var canWrite = true;
-  var loaded = false;
+    <section id="view-overview">
+      <div class="stats" id="stats"></div>
+      <h2>Ready for your review</h2>
+      <p class="hint">A CV and cover letter have been drafted for these. Nothing is sent until you say so.</p>
+      <div id="readyList"></div>
+      <h2>Coming deadlines</h2>
+      <p class="hint">Open roles with a deadline in the next 60 days, soonest first.</p>
+      <div id="deadlineList"></div>
+    </section>
 
-  var $ = function (id) { return document.getElementById(id); };
+    <section id="view-all" hidden>
+      <div class="toolbar">
+        <input id="q" type="search" placeholder="Search role, organisation, location&hellip;">
+        <select id="fStatus"><option value="">All statuses</option></select>
+        <select id="fCat"><option value="">All categories</option></select>
+        <select id="sort">
+          <option value="fit">Sort: best fit</option>
+          <option value="deadline">Sort: deadline</option>
+          <option value="added">Sort: newest</option>
+        </select>
+        <label><input type="checkbox" id="hideClosed" checked> Hide rejected and not a fit</label>
+      </div>
+      <div id="allList"></div>
+    </section>
 
-  // ---------- helpers ----------
-  function esc(s) {
-    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-    });
-  }
-  function safeUrl(u) {
-    if (!u || typeof u !== "string") return null;
-    return /^https?:\/\//i.test(u) ? u : null;
-  }
-  function parseDate(d) {
-    if (!d || typeof d !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
-    var t = new Date(d + "T12:00:00");
-    return isNaN(t) ? null : t;
-  }
-  function daysUntil(d) {
-    var t = parseDate(d); if (!t) return null;
-    var now = new Date(); now.setHours(12, 0, 0, 0);
-    return Math.round((t - now) / 86400000);
-  }
-  function fmtDate(d) {
-    var t = parseDate(d);
-    if (!t) return d || "No deadline listed";
-    return t.toLocaleDateString("en-IE", { day: "numeric", month: "long", year: "numeric" });
-  }
-  function fitClass(f) { return f >= 7 ? "hi" : f >= 5 ? "mid" : "lo"; }
+    <section id="view-profile" hidden>
+      <div class="prose" id="profileView"></div>
+    </section>
+  </div>
 
-  // ---------- tabs ----------
-  var tabs = $("tabs");
-  function showTab(name) {
-    ["overview", "all", "criteria"].forEach(function (t) {
-      $("view-" + t).hidden = t !== name;
-    });
-    Array.prototype.forEach.call(tabs.querySelectorAll("button"), function (b) {
-      b.classList.toggle("on", b.dataset.tab === name);
-    });
-  }
-  tabs.addEventListener("click", function (e) {
-    var b = e.target.closest("button"); if (!b) return;
-    showTab(b.dataset.tab);
-    try { location.hash = b.dataset.tab === "overview" ? "" : b.dataset.tab; } catch (err) {}
-  });
-  function routeHash() {
-    var h = (location.hash || "").replace("#", "");
-    showTab(h === "all" || h === "criteria" ? h : "overview");
-  }
-  window.addEventListener("hashchange", routeHash);
-  routeHash();
+  <!-- Chat -->
+  <button class="chat-bubble" id="chatBubble" aria-label="Open chat">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>
+  </button>
+  <aside class="chat-panel" id="chatPanel" hidden>
+    <div class="chat-head">
+      <div>
+        <h3>Ask Claude</h3>
+        <div class="sub">Knows your CV, criteria and job list. Can edit your jobs.</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn small" id="chatClear" title="Start a new conversation">New</button>
+        <button class="btn small" id="chatClose" aria-label="Close chat">Close</button>
+      </div>
+    </div>
+    <div class="chat-log" id="chatLog"></div>
+    <form class="chat-input" id="chatForm">
+      <textarea id="chatText" rows="1" placeholder="Ask anything, or say what to change&hellip;"></textarea>
+      <button class="btn primary" type="submit" id="chatSend">Send</button>
+    </form>
+  </aside>
 
-  // ---------- filters ----------
-  STATUSES.forEach(function (s) {
-    var o = document.createElement("option"); o.value = s; o.textContent = s; $("fStatus").appendChild(o);
-  });
-  try {
-    var saved = JSON.parse(localStorage.getItem("jobFilters") || "{}");
-    if (saved.sort) $("sort").value = saved.sort;
-    if (typeof saved.hideClosed === "boolean") $("hideClosed").checked = saved.hideClosed;
-  } catch (err) {}
-  ["q", "fStatus", "fCat", "sort", "hideClosed"].forEach(function (id) {
-    $(id).addEventListener("input", function () {
-      try { localStorage.setItem("jobFilters", JSON.stringify({ sort: $("sort").value, hideClosed: $("hideClosed").checked })); } catch (err) {}
-      renderAll();
-    });
-  });
+  <div id="modalRoot"></div>
+</div>
 
-  // ---------- rendering ----------
-  function cardHtml(j) {
-    var dl = daysUntil(j.deadline);
-    var dlClass = dl == null ? "" : dl < 0 ? "past" : dl <= 21 ? "soon" : "";
-    var dlText = dl == null ? fmtDate(j.deadline)
-      : dl < 0 ? "Closed " + fmtDate(j.deadline)
-      : dl === 0 ? "Closes today" : "Closes " + fmtDate(j.deadline) + " (" + dl + " day" + (dl === 1 ? "" : "s") + ")";
-    var tags = [];
-    if (j.category) tags.push('<span class="tag">' + esc(j.category) + "</span>");
-    if (j.belowFloor) tags.push('<span class="tag warn">Below salary floor</span>');
-    if (j.status === "Not a fit") tags.push('<span class="tag bad">Not a fit</span>');
-
-    var opts = STATUSES.map(function (s) {
-      return '<option' + (s === j.status ? " selected" : "") + ">" + esc(s) + "</option>";
-    }).join("");
-    if (j.status && STATUSES.indexOf(j.status) === -1) opts = "<option selected>" + esc(j.status) + "</option>" + opts;
-
-    var btns = [];
-    var link = safeUrl(j.link), cv = safeUrl(j.cvUrl), cl = safeUrl(j.letterUrl);
-    if (cv) btns.push('<a class="btn primary" href="' + esc(cv) + '" target="_blank" rel="noopener">Open CV</a>');
-    if (cl) btns.push('<a class="btn primary" href="' + esc(cl) + '" target="_blank" rel="noopener">Open cover letter</a>');
-    if (link) btns.push('<a class="btn" href="' + esc(link) + '" target="_blank" rel="noopener">View job</a>');
-
-    var fit = typeof j.fit === "number" ? j.fit : null;
-    return '<div class="card' + (j.status === "Ready for review" ? " ready" : "") + '" data-id="' + esc(j.id) + '">' +
-      '<div class="card-top">' +
-        '<div class="fit ' + (fit != null ? fitClass(fit) : "") + '"><div>' + (fit != null ? fit : "?") + '<small>/10</small></div></div>' +
-        '<div class="main">' +
-          '<p class="role">' + esc(j.role) + "</p>" +
-          '<div class="org">' + esc(j.org) + "</div>" +
-          '<div class="meta">' +
-            (j.location ? "<span>" + esc(j.location) + "</span>" : "") +
-            (j.salary ? "<span>" + esc(j.salary) + "</span>" : "") +
-          "</div>" +
-          '<div class="tags">' + tags.join("") + "</div>" +
-        "</div>" +
-        '<div class="side">' +
-          '<select class="statusSel" aria-label="Status"' + (canWrite && db ? "" : " disabled") + ">" + opts + "</select>" +
-          '<div class="deadline ' + dlClass + '">' + esc(dlText) + "</div>" +
-        "</div>" +
-      "</div>" +
-      (j.nextStep ? '<div style="margin-top:10px"><span style="color:var(--muted)">Next step:</span> ' + esc(j.nextStep) + "</div>" : "") +
-      (btns.length ? '<div class="btns">' + btns.join("") + "</div>" : "") +
-      "<details><summary>Details and my notes</summary>" +
-        '<div class="grid2">' +
-          '<div class="k">Why it fits / gaps</div><div>' + esc(j.why || "") + "</div>" +
-          '<div class="k">How to apply</div><div>' + esc(j.howToApply || "Not recorded") + "</div>" +
-          '<div class="k">Added</div><div>' + esc(fmtDate(j.added)) + "</div>" +
-        "</div>" +
-        '<textarea class="myNotes" placeholder="Your own notes (saved automatically)"' + (canWrite && db ? "" : " disabled") + ">" + esc(j.myNotes || "") + "</textarea>" +
-        '<span class="saved"></span>' +
-      "</details>" +
-    "</div>";
-  }
-
-  function renderOverview() {
-    var count = function (fn) { return jobs.filter(fn).length; };
-    var stats = [
-      { n: count(function (j) { return j.status === "Ready for review"; }), l: "Ready for review", s: "Ready for review" },
-      { n: count(function (j) { return j.status === "To review"; }), l: "New to look at", s: "To review" },
-      { n: count(function (j) { return ACTIVE_APPS.indexOf(j.status) !== -1; }), l: "Applications in progress", s: "" },
-      { n: count(function (j) { return j.status === "Interviewing"; }), l: "Interviews", s: "Interviewing" },
-      { n: jobs.length, l: "Total tracked", s: "" }
-    ];
-    $("stats").innerHTML = stats.map(function (s) {
-      return '<div class="stat" data-status="' + esc(s.s) + '"><div class="n">' + s.n + '</div><div class="l">' + esc(s.l) + "</div></div>";
-    }).join("");
-
-    var ready = jobs.filter(function (j) { return j.status === "Ready for review"; })
-      .sort(function (a, b) { return (b.fit || 0) - (a.fit || 0); });
-    $("readyList").innerHTML = ready.length ? ready.map(cardHtml).join("")
-      : '<div class="empty">Nothing waiting for review right now.</div>';
-
-    var soon = jobs.filter(function (j) {
-      var d = daysUntil(j.deadline);
-      return d != null && d >= 0 && d <= 60 && CLOSED.indexOf(j.status) === -1 && j.status !== "Ready for review";
-    }).sort(function (a, b) { return daysUntil(a.deadline) - daysUntil(b.deadline); });
-    $("deadlineList").innerHTML = soon.length ? soon.map(cardHtml).join("")
-      : '<div class="empty">No open deadlines in the next 60 days.</div>';
-  }
-
-  function renderAll() {
-    var q = $("q").value.trim().toLowerCase();
-    var fs = $("fStatus").value, fc = $("fCat").value, sort = $("sort").value, hide = $("hideClosed").checked;
-    var list = jobs.filter(function (j) {
-      if (fs && j.status !== fs) return false;
-      if (fc && j.category !== fc) return false;
-      if (hide && !fs && CLOSED.indexOf(j.status) !== -1) return false;
-      if (q) {
-        var hay = [j.role, j.org, j.location, j.why, j.category].join(" ").toLowerCase();
-        if (hay.indexOf(q) === -1) return false;
-      }
-      return true;
-    });
-    list.sort(function (a, b) {
-      if (sort === "deadline") {
-        var da = daysUntil(a.deadline), dbb = daysUntil(b.deadline);
-        if (da == null) da = 99999; if (dbb == null) dbb = 99999;
-        return da - dbb;
-      }
-      if (sort === "added") return String(b.added || "").localeCompare(String(a.added || ""));
-      return (b.fit || 0) - (a.fit || 0);
-    });
-    $("allList").innerHTML = list.length ? list.map(cardHtml).join("")
-      : '<div class="empty">' + (jobs.length ? "No jobs match these filters." : "No jobs yet.") + "</div>";
-  }
-
-  function refreshCats() {
-    var cats = {};
-    jobs.forEach(function (j) { if (j.category) cats[j.category] = 1; });
-    var sel = $("fCat"), cur = sel.value;
-    sel.innerHTML = '<option value="">All categories</option>' + Object.keys(cats).sort().map(function (c) {
-      return "<option" + (c === cur ? " selected" : "") + ">" + esc(c) + "</option>";
-    }).join("");
-  }
-
-  function renderEverything() {
-    // keep open <details> and focused textarea across re-renders
-    var openIds = {};
-    Array.prototype.forEach.call(document.querySelectorAll(".card details[open]"), function (d) {
-      openIds[d.closest(".card").dataset.id] = 1;
-    });
-    var active = document.activeElement;
-    if (active && active.classList && active.classList.contains("myNotes")) return; // don't clobber typing
-    refreshCats();
-    renderOverview();
-    renderAll();
-    Array.prototype.forEach.call(document.querySelectorAll(".card"), function (c) {
-      if (openIds[c.dataset.id]) { var d = c.querySelector("details"); if (d) d.open = true; }
-    });
-  }
-
-  // stats click -> filtered all view
-  $("stats").addEventListener("click", function (e) {
-    var s = e.target.closest(".stat"); if (!s) return;
-    $("fStatus").value = s.dataset.status || "";
-    showTab("all"); renderAll();
-  });
-
-  // ---------- writes ----------
-  var noteTimers = {};
-  document.addEventListener("change", function (e) {
-    if (!e.target.classList.contains("statusSel")) return;
-    var id = e.target.closest(".card").dataset.id;
-    var val = e.target.value;
-    if (!db || !canWrite) return;
-    e.target.disabled = true;
-    db.doc("jobs/" + id).update({ status: val, updatedAt: new Date().toISOString() })
-      .then(function () { e.target.disabled = false; })
-      .catch(function (err) {
-        e.target.disabled = false;
-        if (err && err.code === "invalid_argument") { canWrite = false; renderEverything(); }
-        setStatus("Couldn't save that change (" + (err && err.code || "error") + "). Please try again.");
-      });
-  });
-  document.addEventListener("input", function (e) {
-    if (!e.target.classList.contains("myNotes")) return;
-    var card = e.target.closest(".card"), id = card.dataset.id, ta = e.target;
-    var flag = card.querySelector(".saved");
-    flag.textContent = "Saving…";
-    clearTimeout(noteTimers[id]);
-    noteTimers[id] = setTimeout(function () {
-      if (!db || !canWrite) return;
-      db.doc("jobs/" + id).update({ myNotes: ta.value })
-        .then(function () { flag.textContent = "Saved"; })
-        .catch(function (err) { flag.textContent = "Not saved (" + (err && err.code || "error") + ")"; });
-    }, 900);
-  });
-  document.addEventListener("focusout", function (e) {
-    if (e.target.classList && e.target.classList.contains("myNotes")) setTimeout(renderEverything, 1200);
-  });
-
-  // ---------- data ----------
-  function setStatus(t) { $("statusLine").textContent = t; }
-
-  renderEverything();
-
-  var timer = setTimeout(function () {
-    if (!loaded) setStatus("Your job list can't be reached yet. It may still be loading, or you may be offline.");
-  }, 10000);
-
-  if (!window.claude || typeof window.claude.use !== "function") {
-    clearTimeout(timer);
-    setStatus("Open this page on claude.ai to see your saved jobs.");
-    return;
-  }
-
-  window.claude.use("db").then(function (d) {
-    db = d;
-    if (!db) {
-      clearTimeout(timer);
-      setStatus("Your saved jobs aren't available in this view. Open the page on claude.ai while signed in.");
-      return;
-    }
-    window.claude.use("user").then(function (u) {
-      if (u && typeof u.can === "function") {
-        Promise.resolve(u.can("data.write")).then(function (ok) {
-          if (ok === false) { canWrite = false; renderEverything(); }
-        }).catch(function () {});
-      }
-    }).catch(function () {});
-
-    db.collection("jobs").onSnapshot(function (snap) {
-      jobs = snap.docs.map(function (d) {
-        var o = Object.assign({}, d.data()); o.id = d.id; return o;
-      });
-      if (!snap.metadata.fromCache) {
-        loaded = true; clearTimeout(timer);
-        var latest = jobs.reduce(function (m, j) { return j.added && j.added > m ? j.added : m; }, "");
-        setStatus(jobs.length + " jobs tracked" + (latest ? " · newest added " + fmtDate(latest) : ""));
-      }
-      renderEverything();
-    }, function (err) {
-      clearTimeout(timer);
-      setStatus(err && err.code === "revoked" ? "This page no longer has access to your job list."
-        : "Live updates stopped (" + (err && err.code || "error") + "). Reload the page to reconnect.");
-    });
-  }).catch(function () {
-    clearTimeout(timer);
-    setStatus("Your saved jobs aren't available in this view.");
-  });
-})();
-</script>
+<script type="module" src="js/app.js"></script>
 </body>
 </html>
