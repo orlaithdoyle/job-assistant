@@ -339,6 +339,49 @@ function deleteJob(id) {
   return j;
 }
 
+// ---------- Apply page (opened from the email's "Submit application" button) ----------
+function applyPage(id) {
+  const j = findJob(id);
+  if (!j) { setStatus("That job isn't in your list yet. If it arrived today, it appears once the daily search has added it.", true); return; }
+  const link = safeUrl(j.link);
+  const how = j.howToApply || "See the job advert";
+  const emailMatch = String(how).match(/[\w.+-]+@[\w-]+\.[\w.]+/);
+  const m = modal(`<h2>Apply: ${esc(j.role)}</h2>
+    <p class="hint" style="margin-top:-6px">${esc(j.org)}${j.deadline ? " \u00b7 closes " + esc(fmtDate(j.deadline)) : ""}</p>
+    <ol class="apply-steps">
+      <li><b>Check your documents.</b>
+        <div class="btns">
+          ${j.cvPdf ? `<button class="btn primary" data-pdf="cv">View CV</button>` : ""}
+          ${j.letterPdf ? `<button class="btn primary" data-pdf="letter">View cover letter</button>` : ""}
+          ${!j.cvPdf && !j.letterPdf ? `<span class="hint">No PDFs attached to this job yet.</span>` : ""}
+        </div>
+        <div class="hint" style="margin-top:6px">Each viewer has a Download button, so you can save the PDFs to upload.</div>
+      </li>
+      <li><b>Send your application.</b> How to apply: ${esc(how)}
+        <div class="btns">
+          ${link ? `<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Open the application page</a>` : ""}
+          ${emailMatch ? `<a class="btn" href="mailto:Orlaithbdoyle@gmail.com?subject=${encodeURIComponent("Job assistant PREPARE " + j.id)}&body=${encodeURIComponent("Please prepare the email application for " + j.role + " at " + j.org + " as a draft in my Gmail.")}">Ask Claude to draft the email for me</a>` : ""}
+        </div>
+      </li>
+      <li><b>Mark it as applied</b> so your list stays up to date.
+        <div class="btns"><button class="btn primary" id="markApplied"${j.status === "Applied" ? " disabled" : ""}>${j.status === "Applied" ? "Marked as applied" : "I've applied"}</button></div>
+      </li>
+    </ol>
+    <p class="hint">Want changes first? Use the "Edit first" button in the email, or ask in the chat.</p>
+    <div class="modal-actions"><button class="btn" id="applyClose">Close</button></div>`);
+  m.querySelector("#applyClose").onclick = closeModal;
+  m.querySelectorAll("[data-pdf]").forEach((b) => b.onclick = () =>
+    viewPdf(b.dataset.pdf === "cv" ? j.cvPdf : j.letterPdf, `${b.dataset.pdf === "cv" ? "CV" : "Cover letter"}: ${j.org}`));
+  m.querySelector("#markApplied").onclick = (e) => {
+    updateJob(j.id, { status: "Applied", nextStep: "Applied " + fmtDate(today()) + ". Waiting to hear back." }, "Applied");
+    e.target.textContent = "Marked as applied"; e.target.disabled = true;
+  };
+}
+function routeApply() {
+  const h = location.hash.slice(1);
+  if (h.startsWith("apply-")) applyPage(decodeURIComponent(h.slice(6)));
+}
+
 // ---------- PDF viewer ----------
 let pdfjs = null;
 async function drawPdf(bytes, holder) {
@@ -686,6 +729,7 @@ function wireApp() {
     showTab(b.dataset.tab); history.replaceState(null, "", b.dataset.tab === "overview" ? location.pathname : "#" + b.dataset.tab);
   });
   const h = location.hash.slice(1); showTab(["all", "profile"].includes(h) ? h : "overview");
+  window.addEventListener("hashchange", routeApply);
   $("stats").addEventListener("click", (e) => {
     const s = e.target.closest(".stat"); if (!s) return;
     $("fStatus").value = s.dataset.status || ""; showTab("all"); renderAll();
@@ -748,7 +792,8 @@ function wireApp() {
 async function enterApp() {
   $("lockScreen").hidden = true; $("app").hidden = false;
   wireApp(); render(); idleStatus();
-  if (S.newFromInbox) setStatus(`${S.newFromInbox} new item(s) from the daily search added. ` + $("statusLine").textContent);
+  routeApply();
+  if (S.newFromInbox) setStatus(`${S.newFromInbox} update(s) from your assistant added. ` + $("statusLine").textContent);
 }
 
 $("lockForm").addEventListener("submit", async (e) => {

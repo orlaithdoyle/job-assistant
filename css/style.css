@@ -181,3 +181,8 @@ body.chat-open .chat-bubble { display: none; }
 .pdf-head h2 { margin: 0; }
 .pdf-pages { flex: 1; overflow-y: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .pdf-page { background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,0.15); max-width: 100%; }
+
+/* ---------- apply page ---------- */
+.apply-steps { padding-left: 22px; }
+.apply-steps li { margin-bottom: 16px; }
+.apply-steps .btns { margin-top: 8px; }
