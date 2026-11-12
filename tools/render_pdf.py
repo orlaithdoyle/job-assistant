@@ -1,32 +1,46 @@
 """Turn a simple Markdown CV or cover letter into a PDF set in Times New Roman.
 
-Usage: python3 tools/render_pdf.py input.md output.pdf
+Usage: python3 tools/render_pdf.py input.md output.pdf [--style classic|modern|elegant]   (classic is the default and Orlaith's chosen design)
 
-Supported Markdown: "# " name/title, "## " section heading, "- " bullets,
-**bold**, *italic*, blank lines between paragraphs. A single line break inside
-a paragraph is kept as a line break. Lines starting with "> " form a
-right-aligned block (used for the sender's details on a cover letter). Requires: pip install reportlab
+Markdown supported:
+  "# Name"                 CV title (a file without one is treated as a cover letter)
+  "## Section"             section heading
+  "- item"                 bullet
+  "Left || Right"          one line with Right flush right (use for job title || dates)
+  "> line"                 right-aligned block (cover letter sender details)
+  **bold**, *italic*, blank lines between paragraphs; single line breaks are kept.
+
+House rules: a CV is never more than 2 pages, a cover letter never more than 1.
+Requires: pip install reportlab
 """
+import argparse
 import re
 import sys
 from functools import partial
 
-from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfgen.canvas import Canvas
-from reportlab.platypus import HRFlowable, ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus import (HRFlowable, KeepTogether, ListFlowable, ListItem, Paragraph,
+                                SimpleDocTemplate, Spacer, Table, TableStyle)
 
 # PDF standard Times fonts: shown as Times New Roman on Windows and Times on Mac.
 REG, BOLD, ITAL = "Times-Roman", "Times-Bold", "Times-Italic"
 
-base = ParagraphStyle("base", fontName=REG, fontSize=11, leading=14, spaceAfter=6)
-title = ParagraphStyle("title", parent=base, fontName=BOLD, fontSize=20, leading=24, alignment=TA_CENTER, spaceAfter=2)
-contact = ParagraphStyle("contact", parent=base, fontSize=10, alignment=TA_CENTER, spaceAfter=8)
-section = ParagraphStyle("section", parent=base, fontName=BOLD, fontSize=12.5, leading=15, spaceBefore=8, spaceAfter=1)
-bullet = ParagraphStyle("bullet", parent=base, spaceAfter=2)
-right = ParagraphStyle("right", parent=base, alignment=TA_RIGHT)
+THEMES = {
+    # Centred name, black, capitalised headings with a full-width rule.
+    "classic": dict(ink="#000000", accent="#000000", muted="#333333", name_size=22, name_align=TA_CENTER,
+                    head_upper=True, head_size=11.5, rule=0.7, rule_color="#000000", body=10.5, lead=13.4),
+    # Left-aligned navy name, navy headings, softer grey contact line.
+    "modern": dict(ink="#1a1a1a", accent="#1f3a5f", muted="#555555", name_size=26, name_align=TA_LEFT,
+                   head_upper=False, head_size=13, rule=1.2, rule_color="#1f3a5f", body=10.5, lead=13.6),
+    # Centred name with a fine rule under the header, small navy capital headings, extra air.
+    "elegant": dict(ink="#111111", accent="#1f3a5f", muted="#444444", name_size=24, name_align=TA_CENTER,
+                    head_upper=True, head_size=10.5, rule=0.4, rule_color="#8a8a8a", body=10.5, lead=13.8),
+}
 
 
 def inline(text):
@@ -36,47 +50,94 @@ def inline(text):
     return text
 
 
-# A cover letter (no "# " title) gets a full blank line between blocks, like a typed letter.
-letter_base = ParagraphStyle("letter", parent=base, spaceAfter=14)
-letter_right = ParagraphStyle("letter_right", parent=letter_base, alignment=TA_RIGHT)
+def styles_for(theme, letter):
+    t = THEMES[theme]
+    ink = colors.HexColor(t["ink"])
+    if letter:  # cover letters stay plain whatever the CV design: 11pt, a blank line between blocks
+        base = ParagraphStyle("lbase", fontName=REG, fontSize=11, leading=14, textColor=colors.black, spaceAfter=14)
+    else:
+        base = ParagraphStyle("base", fontName=REG, fontSize=t["body"], leading=t["lead"], textColor=ink, spaceAfter=4)
+    return dict(
+        t=t,
+        base=base,
+        right=ParagraphStyle("right", parent=base, alignment=TA_RIGHT),
+        title=ParagraphStyle("title", parent=base, fontName=BOLD, fontSize=t["name_size"], leading=t["name_size"] + 4,
+                             alignment=t["name_align"], spaceAfter=4,
+                             textColor=colors.HexColor(t["accent"]) if theme == "modern" else ink),
+        contact=ParagraphStyle("contact", parent=base, fontSize=9.8, leading=12.5, alignment=t["name_align"],
+                               textColor=colors.HexColor(t["muted"]), spaceAfter=2),
+        section=ParagraphStyle("section", parent=base, fontName=BOLD, fontSize=t["head_size"],
+                               leading=t["head_size"] + 3, textColor=colors.HexColor(t["accent"]),
+                               spaceBefore=11 if theme == "elegant" else 9, spaceAfter=0),
+        bullet=ParagraphStyle("bullet", parent=base, spaceAfter=1.5),
+        rowl=ParagraphStyle("rowl", parent=base, spaceAfter=0, spaceBefore=3),
+        rowr=ParagraphStyle("rowr", parent=base, fontName=ITAL, alignment=TA_RIGHT, spaceAfter=0, spaceBefore=3,
+                            textColor=colors.HexColor(t["muted"])),
+    )
 
 
-def build(md_text):
-    global base, right
-    is_letter = not any(l.startswith("# ") for l in md_text.splitlines())
-    if is_letter:
-        base, right = letter_base, letter_right
+def build(md_text, theme):
+    lines = md_text.splitlines()
+    letter = not any(l.startswith("# ") for l in lines)
+    S = styles_for(theme, letter)
+    t = S["t"]
     story, para, items, rblock = [], [], [], []
-    after_title = False
+    state = {"after_title": False, "header_done": letter}
+    width = A4[0] - 2 * 19 * mm - 12  # frame has 6pt padding each side
+
+    def end_header():
+        if not state["header_done"]:
+            state["header_done"] = True
+            if theme == "elegant":
+                story.append(HRFlowable(width="100%", thickness=0.6, color=colors.HexColor("#8a8a8a"),
+                                        spaceBefore=4, spaceAfter=2))
+            else:
+                story.append(Spacer(1, 4))
 
     def flush_para():
-        nonlocal para, after_title, rblock
+        nonlocal para, rblock
         if rblock:
-            story.append(Paragraph("<br/>".join(inline(l) for l in rblock), right))
+            story.append(Paragraph("<br/>".join(inline(l) for l in rblock), S["right"]))
             rblock = []
         if para:
-            style = contact if after_title else base
+            style = S["contact"] if state["after_title"] else S["base"]
             story.append(Paragraph("<br/>".join(inline(l) for l in para), style))
-            para, after_title = [], False
+            para = []
 
     def flush_items():
         nonlocal items
         if items:
             story.append(ListFlowable(
-                [ListItem(Paragraph(inline(t), bullet), leftIndent=12, value="•", bulletFontName=REG) for t in items],
-                bulletType="bullet", bulletFontName=REG, bulletFontSize=9, leftIndent=12, spaceAfter=4))
+                [ListItem(Paragraph(inline(x), S["bullet"]), leftIndent=11, value="•", bulletFontName=REG)
+                 for x in items],
+                bulletType="bullet", bulletFontName=REG, bulletFontSize=8.5, leftIndent=11, spaceAfter=3))
             items = []
 
-    for raw in md_text.splitlines():
+    for raw in lines:
         line = raw.rstrip()
         if line.startswith("# "):
             flush_para(); flush_items()
-            story.append(Paragraph(inline(line[2:]), title))
-            after_title = True
+            story.append(Paragraph(inline(line[2:]), S["title"]))
+            state["after_title"] = True
         elif line.startswith("## "):
             flush_para(); flush_items()
-            story.append(Paragraph(inline(line[3:]), section))
-            story.append(HRFlowable(width="100%", thickness=0.6, color="#444444", spaceBefore=1, spaceAfter=4))
+            state["after_title"] = False
+            end_header()
+            text = line[3:].upper() if t["head_upper"] else line[3:]
+            story.append(KeepTogether([
+                Paragraph(inline(text), S["section"]),
+                HRFlowable(width="100%", thickness=t["rule"], color=colors.HexColor(t["rule_color"]),
+                           spaceBefore=1.5, spaceAfter=4),
+            ]))
+        elif " || " in line and not letter:
+            flush_para(); flush_items()
+            left, right_text = line.split(" || ", 1)
+            tbl = Table([[Paragraph(inline(left), S["rowl"]), Paragraph(inline(right_text), S["rowr"])]],
+                        colWidths=[width * 0.72, width * 0.28])
+            tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
+                                     ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                                     ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
+            story.append(tbl)
         elif line.startswith("> ") or line == ">":
             flush_items()
             if para: flush_para()
@@ -90,23 +151,23 @@ def build(md_text):
             flush_items()
             para.append(line)
     flush_para(); flush_items()
-    return story
+    return story, letter
 
 
 def main():
-    if len(sys.argv) != 3:
-        sys.exit("usage: python3 tools/render_pdf.py input.md output.pdf")
-    src, out = sys.argv[1], sys.argv[2]
-    with open(src, encoding="utf-8") as f:
-        story = build(f.read())
-    doc = SimpleDocTemplate(out, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm,
-                            topMargin=16 * mm, bottomMargin=16 * mm, title="", author="")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("src"); ap.add_argument("out")
+    ap.add_argument("--style", default="classic", choices=sorted(THEMES))
+    a = ap.parse_args()
+    with open(a.src, encoding="utf-8") as f:
+        story, letter = build(f.read(), a.style)
+    margin = 22 * mm if letter else 19 * mm
+    doc = SimpleDocTemplate(a.out, pagesize=A4, leftMargin=margin, rightMargin=margin,
+                            topMargin=16 * mm, bottomMargin=15 * mm, title="", author="")
     doc.build(story, canvasmaker=partial(Canvas, initialFontName=REG))
     pages = doc.page
-    print(f"wrote {out} ({pages} page{'s' if pages != 1 else ''})")
-    # House rules: a CV is never more than 2 pages, a cover letter never more than 1.
-    is_letter = not any(l.startswith("# ") for l in open(src, encoding="utf-8").read().splitlines())
-    limit = 1 if is_letter else 2
+    print(f"wrote {a.out} ({pages} page{'s' if pages != 1 else ''})")
+    limit = 1 if letter else 2
     if pages > limit:
         sys.exit(f"TOO LONG: {pages} pages, limit is {limit}. Shorten the text and render again.")
 
