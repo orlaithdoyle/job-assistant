@@ -147,7 +147,7 @@ async function loadData() {
     }
     if (merged && ghToken()) {
       try {
-        await saveJobsNow("Add " + merged + " job(s) from the daily search");
+        await saveJobsNow("Update job list");
         await writeFile("data/inbox.json", "[]\n", "Clear inbox after merging");
       } catch (e) { console.warn(e); }
     }
@@ -313,7 +313,7 @@ function cleanJob(input) {
 function updateJob(id, changes, why = "Update") {
   const j = findJob(id); if (!j) throw new Error(`No job with id "${id}"`);
   Object.assign(j, cleanJob(changes));
-  render(); scheduleSave(`${why}: ${j.org} - ${j.role}`);
+  render(); scheduleSave("Update job list");
   return j;
 }
 function addJob(data) {
@@ -321,13 +321,13 @@ function addJob(data) {
   if (!j.role || !j.org) throw new Error("A job needs at least a role and an organisation");
   let id = slug(j.org + "-" + j.role); while (findJob(id)) id += "-2";
   j.id = id; S.jobs.push(j);
-  render(); scheduleSave(`Add job: ${j.org} - ${j.role}`);
+  render(); scheduleSave("Update job list");
   return j;
 }
 function deleteJob(id) {
   const i = S.jobs.findIndex((j) => j.id === id); if (i < 0) throw new Error(`No job with id "${id}"`);
   const [j] = S.jobs.splice(i, 1);
-  render(); scheduleSave(`Remove job: ${j.org} - ${j.role}`);
+  render(); scheduleSave("Update job list");
   return j;
 }
 
@@ -655,7 +655,7 @@ function wireApp() {
     if (!e.target.classList.contains("notes")) return;
     const id = e.target.closest(".card").dataset.id, ta = e.target;
     clearTimeout(noteTimers[id]);
-    noteTimers[id] = setTimeout(() => { const j = findJob(id); if (j) { j.myNotes = ta.value; scheduleSave(`Notes: ${j.org}`); } }, 900);
+    noteTimers[id] = setTimeout(() => { const j = findJob(id); if (j) { j.myNotes = ta.value; scheduleSave("Update job list"); } }, 900);
   });
   document.addEventListener("focusout", (e) => { if (e.target.classList?.contains("notes")) setTimeout(render, 1000); });
 
