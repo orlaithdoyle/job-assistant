@@ -174,3 +174,10 @@ body.chat-open .chat-bubble { display: none; }
   .chat-panel { width: 100vw; }
 }
 .form input[type=checkbox] { justify-self: start; width: auto; }
+
+/* ---------- PDF viewer ---------- */
+.modal.modal-wide { max-width: 980px; height: 92vh; display: flex; flex-direction: column; }
+.pdf-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.pdf-head h2 { margin: 0; }
+.pdf-pages { flex: 1; overflow-y: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.pdf-page { background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,0.15); max-width: 100%; }

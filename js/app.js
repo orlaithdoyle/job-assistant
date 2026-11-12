@@ -140,9 +140,14 @@ async function loadData() {
     let merged = 0;
     for (const entry of inbox) {
       try {
-        const job = await C.open(S.priv, entry.blob);
-        if (S.jobs.some((j) => j.id === job.id)) job.id = job.id + "-" + Math.random().toString(36).slice(2, 6);
-        S.jobs.push(job); merged++;
+        const item = await C.open(S.priv, entry.blob);
+        if (item.__update) {
+          const target = S.jobs.find((j) => j.id === item.__update);
+          if (target) { Object.assign(target, item.changes || {}); merged++; }
+          continue;
+        }
+        if (S.jobs.some((j) => j.id === item.id)) item.id = item.id + "-" + Math.random().toString(36).slice(2, 6);
+        S.jobs.push(item); merged++;
       } catch { /* unreadable entry: skip */ }
     }
     if (merged && ghToken()) {
@@ -194,8 +199,10 @@ function cardHtml(j) {
   if (j.status && !STATUSES.includes(j.status)) opts = `<option selected>${esc(j.status)}</option>` + opts;
   const btns = [];
   const cv = safeUrl(j.cvUrl), cl = safeUrl(j.letterUrl), link = safeUrl(j.link);
-  if (cv) btns.push(`<a class="btn primary" href="${esc(cv)}" target="_blank" rel="noopener">Open CV</a>`);
-  if (cl) btns.push(`<a class="btn primary" href="${esc(cl)}" target="_blank" rel="noopener">Open cover letter</a>`);
+  if (j.cvPdf) btns.push(`<button class="btn primary" data-act="pdf" data-file="${esc(j.cvPdf)}" data-title="CV">View CV (PDF)</button>`);
+  else if (cv) btns.push(`<a class="btn primary" href="${esc(cv)}" target="_blank" rel="noopener">Open CV</a>`);
+  if (j.letterPdf) btns.push(`<button class="btn primary" data-act="pdf" data-file="${esc(j.letterPdf)}" data-title="Cover letter">View cover letter (PDF)</button>`);
+  else if (cl) btns.push(`<a class="btn primary" href="${esc(cl)}" target="_blank" rel="noopener">Open cover letter</a>`);
   if (link) btns.push(`<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">View job</a>`);
   btns.push(`<button class="btn" data-act="edit">Edit</button>`);
   const fit = typeof j.fit === "number" ? j.fit : null;
@@ -220,6 +227,7 @@ function cardHtml(j) {
         <div class="k">Why it fits / gaps</div><div>${esc(j.why || "")}</div>
         <div class="k">How to apply</div><div>${esc(j.howToApply || "Not recorded")}</div>
         <div class="k">Added</div><div>${esc(fmtDate(j.added))}</div>
+        ${(j.cvPdf || j.letterPdf) && (cv || cl) ? `<div class="k">Editable drafts</div><div>${cv ? `<a href="${esc(cv)}" target="_blank" rel="noopener">CV</a>` : ""}${cv && cl ? " &middot; " : ""}${cl ? `<a href="${esc(cl)}" target="_blank" rel="noopener">Cover letter</a>` : ""}</div>` : ""}
       </div>
       <textarea class="notes" placeholder="Your own notes (saved automatically)">${esc(j.myNotes || "")}</textarea>
     </details>
@@ -329,6 +337,50 @@ function deleteJob(id) {
   const [j] = S.jobs.splice(i, 1);
   render(); scheduleSave("Update job list");
   return j;
+}
+
+// ---------- PDF viewer ----------
+let pdfjs = null;
+async function drawPdf(bytes, holder) {
+  if (!pdfjs) {
+    pdfjs = await import("./vendor/pdfjs/pdf.min.mjs");
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL("./vendor/pdfjs/pdf.worker.min.mjs", import.meta.url).href;
+  }
+  const pdf = await pdfjs.getDocument({ data: bytes }).promise;
+  holder.innerHTML = "";
+  const width = Math.min(holder.clientWidth - 24, 820);
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const page = await pdf.getPage(n);
+    const base = page.getViewport({ scale: 1 });
+    const scale = width / base.width, ratio = window.devicePixelRatio || 1;
+    const vp = page.getViewport({ scale: scale * ratio });
+    const canvas = document.createElement("canvas");
+    canvas.width = vp.width; canvas.height = vp.height;
+    canvas.style.width = `${Math.floor(vp.width / ratio)}px`;
+    canvas.className = "pdf-page";
+    holder.appendChild(canvas);
+    await page.render({ canvas, canvasContext: canvas.getContext("2d"), viewport: vp }).promise;
+  }
+}
+async function viewPdf(path, title) {
+  const m = modal(`<h2>${esc(title)}</h2><p class="hint" id="pdfMsg">Unlocking the PDF\u2026</p>`);
+  m.classList.add("modal-wide");
+  try {
+    if (!/^data\/docs\/[A-Za-z0-9]+\.locked\.json$/.test(path)) throw new Error("unexpected file path");
+    const doc = await C.open(S.priv, JSON.parse(await readFile(path)));
+    const url = URL.createObjectURL(new Blob([C.b64.to(doc.data)], { type: "application/pdf" }));
+    m.innerHTML = `<div class="pdf-head"><h2>${esc(title)}</h2>
+        <div class="btns" style="margin:0">
+          <a class="btn" href="${url}" download="${esc(doc.name || "document.pdf")}">Download</a>
+          <a class="btn" href="${url}" target="_blank" rel="noopener">Open in new tab</a>
+          <button class="btn" id="pdfClose">Close</button>
+        </div></div>
+      <div class="pdf-pages" id="pdfPages"><p class="hint">Drawing pages\u2026</p></div>`;
+    m.querySelector("#pdfClose").onclick = closeModal;
+    await drawPdf(C.b64.to(doc.data), m.querySelector("#pdfPages"));
+  } catch (e) {
+    m.querySelector("#pdfMsg").textContent = `Couldn't open this PDF (${e.message}).`;
+  }
 }
 
 // ---------- modals ----------
@@ -647,6 +699,8 @@ function wireApp() {
     updateJob(e.target.closest(".card").dataset.id, { status: e.target.value }, "Status");
   });
   document.addEventListener("click", (e) => {
+    const p = e.target.closest("[data-act=pdf]");
+    if (p) { const j = findJob(p.closest(".card").dataset.id); viewPdf(p.dataset.file, `${p.dataset.title}: ${j ? j.org : ""}`); return; }
     const b = e.target.closest("[data-act=edit]"); if (!b) return;
     jobForm(findJob(b.closest(".card").dataset.id));
   });
@@ -694,7 +748,7 @@ function wireApp() {
 async function enterApp() {
   $("lockScreen").hidden = true; $("app").hidden = false;
   wireApp(); render(); idleStatus();
-  if (S.newFromInbox) setStatus(`${S.newFromInbox} new job(s) from the daily search added. ` + $("statusLine").textContent);
+  if (S.newFromInbox) setStatus(`${S.newFromInbox} new item(s) from the daily search added. ` + $("statusLine").textContent);
 }
 
 $("lockForm").addEventListener("submit", async (e) => {
