@@ -12,59 +12,80 @@
 <!-- Lock screen -->
 <div class="lock" id="lockScreen">
   <form class="lock-box" id="lockForm" autocomplete="off">
+    <div class="lock-mark" aria-hidden="true">
+      <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><circle cx="24" cy="24" r="7"/><ellipse cx="24" cy="24" rx="20" ry="8" transform="rotate(-25 24 24)"/></svg>
+    </div>
     <h1>Job Application Assistant</h1>
     <p>Your job list is locked. Enter your password to open it.</p>
     <input type="password" id="pw" placeholder="Password" autocomplete="current-password" required>
     <label><input type="checkbox" id="remember"> Keep me unlocked on this device</label>
-    <button class="btn primary" type="submit" id="unlockBtn">Unlock</button>
+    <button class="btn primary big" type="submit" id="unlockBtn">Unlock</button>
     <div class="lock-err" id="lockErr"></div>
   </form>
 </div>
 
 <!-- App -->
 <div id="app" hidden>
-  <div class="wrap">
-    <header class="top">
-      <div>
-        <h1>Job Application Assistant</h1>
-        <p>Orlaith Doyle &middot; roles found, scored and prepared for you to review</p>
-        <div class="status-line" id="statusLine"></div>
+  <header class="appbar">
+    <div class="appbar-in">
+      <div class="brand">
+        <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="24" cy="24" r="7"/><ellipse cx="24" cy="24" rx="20" ry="8" transform="rotate(-25 24 24)"/></svg>
+        <span>Job Assistant</span>
       </div>
+      <nav class="tabs" id="tabs">
+        <button class="tab on" data-tab="overview">Overview</button>
+        <button class="tab" data-tab="all">All jobs</button>
+        <button class="tab" data-tab="profile">My profile</button>
+      </nav>
       <div class="top-actions">
-        <button class="btn" id="settingsBtn">Settings</button>
-        <button class="btn" id="lockBtn">Lock</button>
+        <button class="btn bar" id="addJobBtn">+ Add a job</button>
+        <button class="btn bar" id="settingsBtn">Settings</button>
+        <button class="btn bar" id="lockBtn">Lock</button>
       </div>
-    </header>
+    </div>
+  </header>
 
-    <nav class="tabs" id="tabs">
-      <button class="tab on" data-tab="overview">Overview</button>
-      <button class="tab" data-tab="all">All jobs</button>
-      <button class="tab" data-tab="profile">My profile</button>
-      <span class="spacer"></span>
-      <button class="btn small" id="addJobBtn" style="margin-bottom:6px">+ Add a job</button>
-    </nav>
+  <main class="wrap">
+    <section class="hello">
+      <h1 id="greeting">Hello, Orlaith</h1>
+      <p id="summary" class="summary"></p>
+      <div class="status-line" id="statusLine"></div>
+    </section>
 
     <section id="view-overview">
       <div class="stats" id="stats"></div>
-      <h2>Ready for your review</h2>
-      <p class="hint">A CV and cover letter have been drafted for these. Nothing is sent until you say so.</p>
+
+      <div class="section-head">
+        <h2>Ready for your review</h2>
+        <span class="hint">CV and cover letter drafted. Nothing is sent until you say so.</span>
+      </div>
       <div id="readyList"></div>
-      <h2>Coming deadlines</h2>
-      <p class="hint">Open roles with a deadline in the next 60 days, soonest first.</p>
+
+      <div class="section-head">
+        <h2>Coming deadlines</h2>
+        <span class="hint">Open roles closing in the next 60 days</span>
+      </div>
       <div id="deadlineList"></div>
+
+      <div class="section-head">
+        <h2>In progress</h2>
+        <span class="hint">Applications you've sent</span>
+      </div>
+      <div id="progressList" class="compact-list"></div>
     </section>
 
     <section id="view-all" hidden>
+      <div class="chips" id="statusChips"></div>
       <div class="toolbar">
-        <input id="q" type="search" placeholder="Search role, organisation, location&hellip;">
-        <select id="fStatus"><option value="">All statuses</option></select>
+        <input id="q" type="search" placeholder="Search role, organisation or location&hellip;">
         <select id="fCat"><option value="">All categories</option></select>
         <select id="sort">
-          <option value="fit">Sort: best fit</option>
-          <option value="deadline">Sort: deadline</option>
-          <option value="added">Sort: newest</option>
+          <option value="fit">Best fit first</option>
+          <option value="deadline">Closing soonest</option>
+          <option value="added">Newest first</option>
         </select>
-        <label><input type="checkbox" id="hideClosed" checked> Hide rejected and not a fit</label>
+        <select id="fStatus" hidden><option value="">All statuses</option></select>
+        <label class="check"><input type="checkbox" id="hideClosed" checked> Hide rejected and not a fit</label>
       </div>
       <div id="allList"></div>
     </section>
@@ -72,11 +93,12 @@
     <section id="view-profile" hidden>
       <div class="prose" id="profileView"></div>
     </section>
-  </div>
+  </main>
 
   <!-- Chat -->
   <button class="chat-bubble" id="chatBubble" aria-label="Open chat">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>
+    <span>Ask Claude</span>
   </button>
   <aside class="chat-panel" id="chatPanel" hidden>
     <div class="chat-head">

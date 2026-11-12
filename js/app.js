@@ -13,7 +13,7 @@ const FIELDS = [
   ["fit", "Fit (1-10)", "number"], ["deadline", "Deadline", "date"], ["location", "Location", "text"],
   ["salary", "Salary", "text"], ["category", "Category", "category"], ["belowFloor", "Below salary floor", "bool"],
   ["why", "Why it fits / gaps", "area"], ["nextStep", "Next step", "text"], ["howToApply", "How to apply", "text"],
-  ["link", "Job link", "url"], ["cvUrl", "CV link", "url"], ["letterUrl", "Cover letter link", "url"],
+  ["link", "Job advert link", "url"], ["applyUrl", "Application page link", "url"], ["cvUrl", "CV link", "url"], ["letterUrl", "Cover letter link", "url"],
 ];
 
 // ---------- small helpers ----------
@@ -185,44 +185,55 @@ async function saveJobsNow(message) {
 
 // ---------- rendering ----------
 function fitClass(f) { return f >= 7 ? "hi" : f >= 5 ? "mid" : "lo"; }
-function cardHtml(j) {
+function statusClass(st) {
+  if (st === "Ready for review") return "s-ready";
+  if (st === "Watching") return "s-watch";
+  if (["Applied", "Contacted", "Interviewing", "Offer"].includes(st)) return "s-active";
+  if (CLOSED.includes(st)) return "s-closed";
+  return "s-review";
+}
+function deadlineFact(j) {
   const dl = daysUntil(j.deadline);
-  const dlClass = dl == null ? "" : dl < 0 ? "past" : dl <= 21 ? "soon" : "";
-  const dlText = dl == null ? (j.deadline ? fmtDate(j.deadline) : "No deadline listed")
-    : dl < 0 ? "Closed " + fmtDate(j.deadline)
-    : dl === 0 ? "Closes today" : `Closes ${fmtDate(j.deadline)} (${dl} day${dl === 1 ? "" : "s"})`;
-  const tags = [];
-  if (j.category) tags.push(`<span class="tag">${esc(j.category)}</span>`);
-  if (j.belowFloor) tags.push(`<span class="tag warn">Below salary floor</span>`);
-  if (j.status === "Not a fit") tags.push(`<span class="tag bad">Not a fit</span>`);
+  if (dl == null) return j.deadline ? `<span class="fact">Closes ${esc(fmtDate(j.deadline))}</span>` : `<span class="fact">No deadline listed</span>`;
+  if (dl < 0) return `<span class="fact dl-past">Closed ${esc(fmtDate(j.deadline))}</span>`;
+  if (dl === 0) return `<span class="fact dl-soon">Closes today</span>`;
+  return `<span class="fact${dl <= 21 ? " dl-soon" : ""}">Closes ${esc(fmtDate(j.deadline))} &middot; ${dl} day${dl === 1 ? "" : "s"} left</span>`;
+}
+function cardHtml(j) {
   let opts = STATUSES.map((s) => `<option${s === j.status ? " selected" : ""}>${esc(s)}</option>`).join("");
   if (j.status && !STATUSES.includes(j.status)) opts = `<option selected>${esc(j.status)}</option>` + opts;
-  const btns = [];
-  const cv = safeUrl(j.cvUrl), cl = safeUrl(j.letterUrl), link = safeUrl(j.link);
-  if (j.cvPdf) btns.push(`<button class="btn primary" data-act="pdf" data-file="${esc(j.cvPdf)}" data-title="CV">View CV (PDF)</button>`);
-  else if (cv) btns.push(`<a class="btn primary" href="${esc(cv)}" target="_blank" rel="noopener">Open CV</a>`);
-  if (j.letterPdf) btns.push(`<button class="btn primary" data-act="pdf" data-file="${esc(j.letterPdf)}" data-title="Cover letter">View cover letter (PDF)</button>`);
-  else if (cl) btns.push(`<a class="btn primary" href="${esc(cl)}" target="_blank" rel="noopener">Open cover letter</a>`);
-  if (link) btns.push(`<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">View job</a>`);
-  btns.push(`<button class="btn" data-act="edit">Edit</button>`);
   const fit = typeof j.fit === "number" ? j.fit : null;
+  const facts = [];
+  if (fit != null) facts.push(`<span class="fact fit-${fitClass(fit)}">Fit ${fit}/10</span>`);
+  facts.push(deadlineFact(j));
+  if (j.location) facts.push(`<span class="fact">${esc(j.location)}</span>`);
+  if (j.salary) facts.push(`<span class="fact">${esc(j.salary)}</span>`);
+  if (j.category) facts.push(`<span class="fact">${esc(j.category)}</span>`);
+  if (j.belowFloor) facts.push(`<span class="fact floor">Below salary floor</span>`);
+
+  const cv = safeUrl(j.cvUrl), cl = safeUrl(j.letterUrl), link = safeUrl(j.link);
+  const acts = [];
+  const canApply = !["Applied", "Contacted", "Interviewing", "Offer", "Rejected", "Not a fit", "Watching"].includes(j.status);
+  if (canApply && (j.cvPdf || j.letterPdf || safeUrl(j.applyUrl) || link)) acts.push(`<button class="btn go" data-act="apply">Apply</button>`);
+  if (j.cvPdf) acts.push(`<button class="btn primary" data-act="pdf" data-file="${esc(j.cvPdf)}" data-title="CV">CV</button>`);
+  else if (cv) acts.push(`<a class="btn primary" href="${esc(cv)}" target="_blank" rel="noopener">CV</a>`);
+  if (j.letterPdf) acts.push(`<button class="btn primary" data-act="pdf" data-file="${esc(j.letterPdf)}" data-title="Cover letter">Cover letter</button>`);
+  else if (cl) acts.push(`<a class="btn primary" href="${esc(cl)}" target="_blank" rel="noopener">Cover letter</a>`);
+  if (link) acts.push(`<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Job advert</a>`);
+  acts.push(`<span class="spacer"></span><button class="btn small" data-act="edit">Edit details</button>`);
+
   return `<div class="card${j.status === "Ready for review" ? " ready" : ""}" data-id="${esc(j.id)}">
-    <div class="card-top">
-      <div class="fit ${fit != null ? fitClass(fit) : ""}"><div>${fit ?? "?"}<small>/10</small></div></div>
-      <div class="main">
-        <p class="role">${esc(j.role)}</p>
+    <div class="card-head">
+      <div class="card-title">
         <div class="org">${esc(j.org)}</div>
-        <div class="meta">${j.location ? `<span>${esc(j.location)}</span>` : ""}${j.salary ? `<span>${esc(j.salary)}</span>` : ""}</div>
-        <div class="tags">${tags.join("")}</div>
+        <p class="role">${esc(j.role)}</p>
       </div>
-      <div class="side">
-        <select class="statusSel" aria-label="Status">${opts}</select>
-        <div class="deadline ${dlClass}">${esc(dlText)}</div>
-      </div>
+      <select class="statusSel status-pill ${statusClass(j.status)}" aria-label="Status">${opts}</select>
     </div>
-    ${j.nextStep ? `<div class="next"><span>Next step:</span> ${esc(j.nextStep)}</div>` : ""}
-    <div class="btns">${btns.join("")}</div>
-    <details><summary>Details and my notes</summary>
+    <div class="facts">${facts.join("")}</div>
+    ${j.nextStep ? `<div class="next"><b>Next step:</b> ${esc(j.nextStep)}</div>` : ""}
+    <div class="actions">${acts.join("")}</div>
+    <details><summary>Why it fits, and my notes</summary>
       <div class="grid2">
         <div class="k">Why it fits / gaps</div><div>${esc(j.why || "")}</div>
         <div class="k">How to apply</div><div>${esc(j.howToApply || "Not recorded")}</div>
@@ -236,24 +247,46 @@ function cardHtml(j) {
 
 function renderOverview() {
   const n = (fn) => S.jobs.filter(fn).length;
-  const stats = [
-    [n((j) => j.status === "Ready for review"), "Ready for review", "Ready for review"],
-    [n((j) => j.status === "To review"), "New to look at", "To review"],
-    [n((j) => ACTIVE.includes(j.status)), "Applications in progress", ""],
-    [n((j) => j.status === "Interviewing"), "Interviews", "Interviewing"],
-    [S.jobs.length, "Total tracked", ""],
-  ];
-  $("stats").innerHTML = stats.map(([num, label, st]) =>
-    `<button class="stat" data-status="${esc(st)}"><div class="n">${num}</div><div class="l">${esc(label)}</div></button>`).join("");
   const ready = S.jobs.filter((j) => j.status === "Ready for review").sort((a, b) => (b.fit || 0) - (a.fit || 0));
-  $("readyList").innerHTML = ready.length ? ready.map(cardHtml).join("") : `<div class="empty">Nothing waiting for review right now.</div>`;
+  const fresh = n((j) => j.status === "To review");
+  const inProg = S.jobs.filter((j) => ACTIVE.includes(j.status));
   const soon = S.jobs.filter((j) => {
     const d = daysUntil(j.deadline);
-    return d != null && d >= 0 && d <= 60 && !CLOSED.includes(j.status) && j.status !== "Ready for review";
+    return d != null && d >= 0 && d <= 60 && !CLOSED.includes(j.status) && !ACTIVE.includes(j.status) && j.status !== "Ready for review";
   }).sort((a, b) => daysUntil(a.deadline) - daysUntil(b.deadline));
+
+  const h = new Date().getHours();
+  $("greeting").textContent = (h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening") + ", Orlaith";
+  const bits = [];
+  if (ready.length) bits.push(`<b>${ready.length} application${ready.length === 1 ? "" : "s"}</b> ready for your review`);
+  if (fresh) bits.push(`<b>${fresh} new role${fresh === 1 ? "" : "s"}</b> to look at`);
+  if (inProg.length) bits.push(`<b>${inProg.length}</b> in progress`);
+  $("summary").innerHTML = bits.length ? bits.join(" &middot; ") + "." : "You're all caught up.";
+
+  const stats = [
+    [ready.length, "Ready for review", "Ready for review", "var(--go)"],
+    [fresh, "New to look at", "To review", "var(--accent)"],
+    [inProg.length, "In progress", "", "var(--warn)"],
+    [n((j) => j.status === "Interviewing"), "Interviews", "Interviewing", "var(--purple)"],
+    [S.jobs.length, "Total tracked", "", "var(--muted)"],
+  ];
+  $("stats").innerHTML = stats.map(([num, label, st, c]) =>
+    `<button class="stat" style="--c:${c}" data-status="${esc(st)}"><div class="n">${num}</div><div class="l">${esc(label)}</div></button>`).join("");
+  $("readyList").innerHTML = ready.length ? ready.map(cardHtml).join("") : `<div class="empty">Nothing waiting for review right now.</div>`;
   $("deadlineList").innerHTML = soon.length ? soon.map(cardHtml).join("") : `<div class="empty">No open deadlines in the next 60 days.</div>`;
+  $("progressList").innerHTML = inProg.length ? inProg.map((j) =>
+    `<div class="row" data-open="${esc(j.id)}"><div class="what"><div class="r">${esc(j.role)}</div><div class="o">${esc(j.org)}${j.nextStep ? " &middot; " + esc(j.nextStep) : ""}</div></div><span class="pill ${statusClass(j.status)}">${esc(j.status)}</span></div>`).join("")
+    : `<div class="empty">No applications in progress yet.</div>`;
+}
+function renderChips() {
+  const cur = $("fStatus").value;
+  const count = (st) => S.jobs.filter((j) => j.status === st).length;
+  const list = [["", "All", S.jobs.length], ...STATUSES.filter((st) => count(st)).map((st) => [st, st, count(st)])];
+  $("statusChips").innerHTML = list.map(([v, label, c]) =>
+    `<button class="chip${v === cur ? " on" : ""}" data-v="${esc(v)}">${esc(label)}<span class="count">${c}</span></button>`).join("");
 }
 function renderAll() {
+  renderChips();
   const q = $("q").value.trim().toLowerCase(), fs = $("fStatus").value, fc = $("fCat").value;
   const sort = $("sort").value, hide = $("hideClosed").checked;
   const list = S.jobs.filter((j) => {
@@ -343,7 +376,7 @@ function deleteJob(id) {
 function applyPage(id) {
   const j = findJob(id);
   if (!j) { setStatus("That job isn't in your list yet. If it arrived today, it appears once the daily search has added it.", true); return; }
-  const link = safeUrl(j.link);
+  const link = safeUrl(j.applyUrl) || safeUrl(j.link);
   const how = j.howToApply || "See the job advert";
   const emailMatch = String(how).match(/[\w.+-]+@[\w-]+\.[\w.]+/);
   const m = modal(`<h2>Apply: ${esc(j.role)}</h2>
@@ -560,7 +593,7 @@ const TOOLS = [
             fit: { type: "number" }, deadline: { type: "string", description: "YYYY-MM-DD or empty" },
             location: { type: "string" }, salary: { type: "string" }, category: { type: "string", enum: CATEGORIES },
             belowFloor: { type: "boolean" }, why: { type: "string" }, nextStep: { type: "string" },
-            howToApply: { type: "string" }, link: { type: "string" }, cvUrl: { type: "string" },
+            howToApply: { type: "string" }, link: { type: "string" }, applyUrl: { type: "string" }, cvUrl: { type: "string" },
             letterUrl: { type: "string" }, myNotes: { type: "string" },
           },
         },
@@ -590,8 +623,8 @@ const TOOLS = [
 ];
 
 function systemPrompt() {
-  const jobs = S.jobs.map(({ id, role, org, status, fit, deadline, location, salary, category, belowFloor, why, nextStep, howToApply, link, cvUrl, letterUrl, myNotes, added }) =>
-    ({ id, role, org, status, fit, deadline, location, salary, category, belowFloor, why, nextStep, howToApply, link, cvUrl, letterUrl, myNotes, added }));
+  const jobs = S.jobs.map(({ id, role, org, status, fit, deadline, location, salary, category, belowFloor, why, nextStep, howToApply, link, applyUrl, cvUrl, letterUrl, myNotes, added }) =>
+    ({ id, role, org, status, fit, deadline, location, salary, category, belowFloor, why, nextStep, howToApply, link, applyUrl, cvUrl, letterUrl, myNotes, added }));
   return `You are Claude, working as Orlaith Doyle's personal job application assistant inside her own job-tracking website. Today is ${new Date().toDateString()}.
 
 How to behave:
@@ -745,6 +778,15 @@ function wireApp() {
   document.addEventListener("click", (e) => {
     const p = e.target.closest("[data-act=pdf]");
     if (p) { const j = findJob(p.closest(".card").dataset.id); viewPdf(p.dataset.file, `${p.dataset.title}: ${j ? j.org : ""}`); return; }
+    const ap = e.target.closest("[data-act=apply]");
+    if (ap) { applyPage(ap.closest(".card").dataset.id); return; }
+    const row = e.target.closest("[data-open]");
+    if (row) { showTab("all"); $("fStatus").value = ""; $("q").value = ""; renderAll();
+      const c = document.querySelector(`#allList .card[data-id="${CSS.escape(row.dataset.open)}"]`);
+      if (c) { c.scrollIntoView({ behavior: "smooth", block: "center" }); c.classList.add("flash"); setTimeout(() => c.classList.remove("flash"), 1500); }
+      return; }
+    const chip = e.target.closest("#statusChips .chip");
+    if (chip) { $("fStatus").value = chip.dataset.v; renderAll(); return; }
     const b = e.target.closest("[data-act=edit]"); if (!b) return;
     jobForm(findJob(b.closest(".card").dataset.id));
   });
