@@ -102,7 +102,13 @@ def main():
     doc = SimpleDocTemplate(out, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm,
                             topMargin=16 * mm, bottomMargin=16 * mm, title="", author="")
     doc.build(story, canvasmaker=partial(Canvas, initialFontName=REG))
-    print("wrote", out)
+    pages = doc.page
+    print(f"wrote {out} ({pages} page{'s' if pages != 1 else ''})")
+    # House rules: a CV is never more than 2 pages, a cover letter never more than 1.
+    is_letter = not any(l.startswith("# ") for l in open(src, encoding="utf-8").read().splitlines())
+    limit = 1 if is_letter else 2
+    if pages > limit:
+        sys.exit(f"TOO LONG: {pages} pages, limit is {limit}. Shorten the text and render again.")
 
 
 if __name__ == "__main__":
