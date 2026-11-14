@@ -241,3 +241,7 @@ body.chat-open .chat-bubble { display: none; }
   .chat-bubble span { display: none; }
   .chat-bubble { width: 56px; padding: 0; justify-content: center; }
 }
+
+.search-now { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+.search-now .hint { font-size: 14px; color: var(--muted); }
+.search-now .btn[disabled] { opacity: .65; cursor: default; }

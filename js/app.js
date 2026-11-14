@@ -864,10 +864,45 @@ function wireApp() {
   window.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 }
 
+// ---------- "Search for jobs now" ----------
+// The button writes a small request file (timestamps only, nothing about jobs) to the repo.
+// The assistant's hourly task sees it, runs the full search, and emails her when it's done.
+const SEARCH_FILE = "data/search-request.json";
+const fmtTime = (iso) => new Date(iso).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+async function loadSearchState() {
+  try { S.searchReq = JSON.parse(await readFile(SEARCH_FILE)); } catch { S.searchReq = {}; }
+  renderSearchNow();
+}
+function renderSearchNow() {
+  const r = S.searchReq || {}, btn = $("searchNowBtn"), msg = $("searchNowMsg");
+  const pending = r.requestedAt && (!r.handledAt || r.handledAt < r.requestedAt);
+  btn.disabled = !!pending;
+  btn.innerHTML = pending ? "&#9203; Search requested" : "&#128269; Search for jobs now";
+  msg.textContent = pending
+    ? `Asked ${fmtTime(r.requestedAt)}. Your assistant picks it up within the hour (8am to 10pm) and emails you the results.`
+    : r.handledAt ? `Last on-demand search: ${fmtTime(r.handledAt)}. Daily search runs at 8am.` : "Runs a full search now instead of waiting for the 8am one.";
+}
+async function requestSearch() {
+  if (!ghToken()) { setStatus("Add your GitHub key in Settings first, so the request can be saved.", true); return; }
+  const btn = $("searchNowBtn"); btn.disabled = true; btn.textContent = "Sending…";
+  try {
+    await readFile(SEARCH_FILE).catch(() => "");  // refresh the file version
+    S.searchReq = { ...(S.searchReq || {}), requestedAt: new Date().toISOString() };
+    await writeFile(SEARCH_FILE, JSON.stringify(S.searchReq, null, 2) + "\n", "Search request");
+    setStatus("Search requested. You'll get an email when it's done.");
+  } catch (e) {
+    S.searchReq.requestedAt = null;
+    setStatus(`Couldn't send the search request (${e.detail || e.message}).`, true);
+  }
+  renderSearchNow();
+}
+
 async function enterApp() {
   $("lockScreen").hidden = true; $("app").hidden = false;
   wireApp(); render(); idleStatus();
   routeApply();
+  $("searchNowBtn").onclick = requestSearch;
+  loadSearchState();
   if (S.newFromInbox) setStatus(`${S.newFromInbox} update(s) from your assistant added. ` + $("statusLine").textContent);
 }
 
