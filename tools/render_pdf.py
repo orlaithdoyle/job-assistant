@@ -8,6 +8,9 @@ Markdown supported:
   "- item"                 bullet
   "Left || Right"          one line with Right flush right (use for job title || dates)
   "> line"                 right-aligned block (cover letter sender details)
+  "### Project title"      bold project heading; the next line is its paragraph (indented, justified)
+  "[[cols]]" ... "[[/cols]]"  side-by-side columns: first row = bold column headings,
+                           each row "left | right" (e.g. technical | professional skills)
   **bold**, *italic*, blank lines between paragraphs; single line breaks are kept.
 
 House rules: a CV is never more than 2 pages, a cover letter never more than 1.
@@ -36,7 +39,7 @@ REG, BOLD, ITAL = "Times-Roman", "Times-Bold", "Times-Italic"
 THEMES = {
     # Centred name, black, capitalised headings with a full-width rule.
     "classic": dict(ink="#000000", accent="#000000", muted="#333333", name_size=22, name_align=TA_CENTER,
-                    head_upper=True, head_size=11.5, rule=0.7, rule_color="#000000", body=10.5, lead=13.4),
+                    head_upper=True, head_size=11, rule=0.7, rule_color="#000000", body=10.2, lead=12.6),
     # Left-aligned navy name, navy headings, softer grey contact line.
     "modern": dict(ink="#1a1a1a", accent="#1f3a5f", muted="#555555", name_size=26, name_align=TA_LEFT,
                    head_upper=False, head_size=13, rule=1.2, rule_color="#1f3a5f", body=10.5, lead=13.6),
@@ -71,8 +74,12 @@ def styles_for(theme, letter):
                                textColor=colors.HexColor(t["muted"]), spaceAfter=2),
         section=ParagraphStyle("section", parent=base, fontName=BOLD, fontSize=t["head_size"],
                                leading=t["head_size"] + 3, textColor=colors.HexColor(t["accent"]),
-                               spaceBefore=11 if theme == "elegant" else 12, spaceAfter=0),
+                               spaceBefore=11 if theme == "elegant" else 10, spaceAfter=0),
         bullet=ParagraphStyle("bullet", parent=base, spaceAfter=1.5),
+        proj=ParagraphStyle("proj", parent=base, fontName=BOLD, leftIndent=11, spaceBefore=4, spaceAfter=1),
+        projtext=ParagraphStyle("projtext", parent=base, leftIndent=11, spaceAfter=3, alignment=4),
+        colhead=ParagraphStyle("colhead", parent=base, fontName=BOLD, spaceAfter=1),
+        cell=ParagraphStyle("cell", parent=base, spaceAfter=0, leading=t["lead"] - 0.6),
         rowl=ParagraphStyle("rowl", parent=base, spaceAfter=0, spaceBefore=3),
         rowr=ParagraphStyle("rowr", parent=base, fontName=ITAL, alignment=TA_RIGHT, spaceAfter=0, spaceBefore=3,
                             textColor=colors.HexColor(t["muted"])),
@@ -118,8 +125,45 @@ def build(md_text, theme):
                 bulletType="bullet", bulletFontName=REG, bulletFontSize=8.5, leftIndent=11, spaceAfter=3))
             items = []
 
+    cols = None  # rows collected inside a [[cols]] ... [[/cols]] block
+
     for raw in lines:
         line = raw.rstrip()
+        if line.strip() == "[[cols]]":
+            flush_para(); flush_items()
+            cols = []
+            continue
+        if line.strip() == "[[/cols]]":
+            if cols:
+                head = cols[0]
+                rows = [[Paragraph(inline(c), S["colhead"]) for c in head]]
+                rows += [[Paragraph(inline(c), S["cell"]) for c in r] for r in cols[1:]]
+                n = max(len(r) for r in rows)
+                rows = [r + [Paragraph("", S["cell"])] * (n - len(r)) for r in rows]
+                widths = [width * 0.62, width * 0.38] if n == 2 else [width / n] * n
+                tbl = Table(rows, colWidths=widths)
+                tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
+                                         ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                                         ("TOPPADDING", (0, 0), (-1, -1), 0.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 0.5)]))
+                marks.append((len(story), "entry"))
+                story.append(tbl)
+            cols = None
+            continue
+        if cols is not None:
+            if line.strip():
+                cols.append([c.strip() for c in line.split("|")])
+            continue
+        if line.startswith("### "):
+            flush_para(); flush_items()
+            marks.append((len(story), "entry"))
+            story.append(Paragraph(inline(line[4:]), S["proj"]))
+            state["proj"] = True
+            continue
+        if state.get("proj") and line.strip() and not line.startswith(("#", "- ", "* ")) and " || " not in line:
+            story.append(Paragraph(inline(line), S["projtext"]))
+            continue
+        if not line.strip() or line.startswith(("#", "- ", "* ")) or " || " in line:
+            state["proj"] = False
         if line.startswith("# "):
             flush_para(); flush_items()
             story.append(Paragraph(inline(line[2:]), S["title"]))
@@ -140,7 +184,7 @@ def build(md_text, theme):
             left, right_text = line.split(" || ", 1)
             marks.append((len(story), "entry"))
             tbl = Table([[Paragraph(inline(left), S["rowl"]), Paragraph(inline(right_text), S["rowr"])]],
-                        colWidths=[width * 0.72, width * 0.28])
+                        colWidths=[width * 0.80, width * 0.20])
             tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
                                      ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                                      ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
