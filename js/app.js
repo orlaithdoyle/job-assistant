@@ -509,6 +509,27 @@ function alertInModal(m, text) {
   if (!el) { el = document.createElement("div"); el.className = "lock-err"; m.appendChild(el); }
   el.textContent = text;
 }
+// Ask GitHub whether a key works and can write to the repo. Returns a plain-English problem, or "" if fine.
+async function checkGithubKey(key) {
+  if (!/^(github_pat_|ghp_)/.test(key)) return "That doesn't look like a GitHub key. It should start with github_pat_. Copy it again from GitHub.";
+  let res;
+  try {
+    res = await fetch(`https://api.github.com/repos/${REPO.owner}/${REPO.name}`, {
+      headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${key}` } });
+  } catch { return "Couldn't reach GitHub. Check your internet connection and try again."; }
+  if (res.status === 401) return "GitHub doesn't recognise this key (it may be incomplete, deleted or expired). Make a new key and paste the whole thing.";
+  if (res.status === 404 || res.status === 403) return "This key can't see the job-assistant repository. When making the key, choose Only select repositories and pick job-assistant.";
+  if (!res.ok) return `GitHub said ${res.status}. Try again in a minute.`;
+  const info = await res.json().catch(() => ({}));
+  if (info.permissions && !info.permissions.push) return "This key can read but not save. On GitHub, edit the key: Permissions, Contents, set to Read and write.";
+  return "";
+}
+function showKeyProblem(m, text) {
+  let el = m.querySelector("#sGhMsg");
+  if (!el) { el = document.createElement("div"); el.id = "sGhMsg"; el.className = "help"; el.style.color = "var(--bad, #b3261e)"; el.style.fontWeight = "bold";
+    m.querySelector("#sGh").insertAdjacentElement("afterend", el); }
+  el.textContent = text;
+}
 function settings() {
   const m = modal(`<h2>Settings</h2>
     <div class="settings-section" style="border:none;margin-top:0;padding-top:0">
@@ -546,9 +567,17 @@ function settings() {
       <button class="btn primary" id="sSave">Save</button>
     </div>`);
   m.querySelector("#sSave").onclick = async () => {
-    store.set("ja.githubToken", m.querySelector("#sGh").value.trim() || null);
+    const btn = m.querySelector("#sSave");
+    const raw = m.querySelector("#sGh").value.replace(/\s+/g, "");  // drop stray spaces or line breaks from copying
     store.set("ja.anthropicKey", m.querySelector("#sAk").value.trim() || null);
     store.set("ja.model", m.querySelector("#sModel").value.trim() || null);
+    if (raw) {
+      btn.disabled = true; btn.textContent = "Checking key...";
+      const problem = await checkGithubKey(raw);
+      btn.disabled = false; btn.textContent = "Save";
+      if (problem) { showKeyProblem(m, problem); return; }  // keep Settings open so it can be fixed
+    }
+    store.set("ja.githubToken", raw || null);
     closeModal(); idleStatus();
     if (ghToken()) {
       try { // refresh file versions so the next save works
