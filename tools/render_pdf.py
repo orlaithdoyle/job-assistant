@@ -11,7 +11,8 @@ Markdown supported:
   "!! text"                centred bold italic closing line (e.g. References are available upon request.)
   "### Project title"      bold project heading; the next line is its paragraph (indented, justified)
   "[[cols]]" ... "[[/cols]]"  side-by-side columns: first row = bold column headings,
-                           each row "left | right" (e.g. technical | professional skills)
+                           each row "left | right" (e.g. technical | professional skills);
+                           three columns "left | name | level" line up a list such as languages
   **bold**, *italic*, blank lines between paragraphs; single line breaks are kept.
 
 House rules: a CV is never more than 2 pages, a cover letter never more than 1.
@@ -143,7 +144,8 @@ def build(md_text, theme):
                 rows += [[Paragraph(inline(c), S["cell"]) for c in r] for r in cols[1:]]
                 n = max(len(r) for r in rows)
                 rows = [r + [Paragraph("", S["cell"])] * (n - len(r)) for r in rows]
-                widths = [width * 0.62, width * 0.38] if n == 2 else [width / n] * n
+                widths = ([width * 0.62, width * 0.38] if n == 2 else
+                          [width * 0.62, width * 0.16, width * 0.22] if n == 3 else [width / n] * n)
                 tbl = Table(rows, colWidths=widths)
                 tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
                                          ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
