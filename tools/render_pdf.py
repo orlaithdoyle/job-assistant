@@ -11,6 +11,8 @@ Markdown supported:
   **bold**, *italic*, blank lines between paragraphs; single line breaks are kept.
 
 House rules: a CV is never more than 2 pages, a cover letter never more than 1.
+CV sections (and each job or degree entry) are never split across pages; if that pushes the CV
+to 3 pages it fails with TOO LONG, so shorten the text.
 Requires: pip install reportlab
 """
 import argparse
@@ -24,7 +26,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfgen.canvas import Canvas
-from reportlab.platypus import (HRFlowable, KeepTogether, ListFlowable, ListItem, Paragraph,
+from reportlab.platypus import (CondPageBreak, HRFlowable, KeepTogether, ListFlowable, ListItem, Paragraph,
                                 SimpleDocTemplate, Spacer, Table, TableStyle)
 
 # PDF standard Times fonts: shown as Times New Roman on Windows and Times on Mac.
@@ -68,7 +70,7 @@ def styles_for(theme, letter):
                                textColor=colors.HexColor(t["muted"]), spaceAfter=2),
         section=ParagraphStyle("section", parent=base, fontName=BOLD, fontSize=t["head_size"],
                                leading=t["head_size"] + 3, textColor=colors.HexColor(t["accent"]),
-                               spaceBefore=11 if theme == "elegant" else 9, spaceAfter=0),
+                               spaceBefore=11 if theme == "elegant" else 12, spaceAfter=0),
         bullet=ParagraphStyle("bullet", parent=base, spaceAfter=1.5),
         rowl=ParagraphStyle("rowl", parent=base, spaceAfter=0, spaceBefore=3),
         rowr=ParagraphStyle("rowr", parent=base, fontName=ITAL, alignment=TA_RIGHT, spaceAfter=0, spaceBefore=3,
@@ -83,6 +85,7 @@ def build(md_text, theme):
     t = S["t"]
     story, para, items, rblock = [], [], [], []
     state = {"after_title": False, "header_done": letter}
+    marks = []  # (index in story, "section" | "entry") so sections and entries can be kept whole
     width = A4[0] - 2 * 19 * mm - 12  # frame has 6pt padding each side
 
     def end_header():
@@ -92,7 +95,8 @@ def build(md_text, theme):
                 story.append(HRFlowable(width="100%", thickness=0.6, color=colors.HexColor("#8a8a8a"),
                                         spaceBefore=4, spaceAfter=2))
             else:
-                story.append(Spacer(1, 4))
+                story.append(HRFlowable(width="100%", thickness=1.4, color=colors.HexColor(t["rule_color"]),
+                                        spaceBefore=5, spaceAfter=3))
 
     def flush_para():
         nonlocal para, rblock
@@ -124,6 +128,7 @@ def build(md_text, theme):
             state["after_title"] = False
             end_header()
             text = line[3:].upper() if t["head_upper"] else line[3:]
+            marks.append((len(story), "section"))
             story.append(KeepTogether([
                 Paragraph(inline(text), S["section"]),
                 HRFlowable(width="100%", thickness=t["rule"], color=colors.HexColor(t["rule_color"]),
@@ -132,6 +137,7 @@ def build(md_text, theme):
         elif " || " in line and not letter:
             flush_para(); flush_items()
             left, right_text = line.split(" || ", 1)
+            marks.append((len(story), "entry"))
             tbl = Table([[Paragraph(inline(left), S["rowl"]), Paragraph(inline(right_text), S["rowr"])]],
                         colWidths=[width * 0.72, width * 0.28])
             tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -151,7 +157,54 @@ def build(md_text, theme):
             flush_items()
             para.append(line)
     flush_para(); flush_items()
+    if not letter:
+        story = keep_sections_whole(story, marks)
     return story, letter
+
+
+def keep_sections_whole(story, marks):
+    """Never let a section (or a job/degree entry) start on one page and finish on the next.
+
+    Before each section, and before each entry inside it, a conditional page break asks for
+    enough room for the whole thing; if it doesn't fit in what's left of the page it moves over.
+    """
+    width = A4[0] - 2 * 19 * mm - 12
+    page_h = A4[1] - 16 * mm - 15 * mm - 12
+
+    import io
+    scratch = Canvas(io.BytesIO())
+
+    def height(chunk):
+        total = 0
+        for f in chunk:
+            if isinstance(f, KeepTogether):  # its own wrap() reports a huge sentinel, so measure the parts
+                total += height(f._content)
+            else:
+                total += f.wrapOn(scratch, width, page_h)[1] + f.getSpaceBefore() + f.getSpaceAfter()
+        return total
+
+    starts = sorted(marks)
+    sec_starts = [i for i, kind in starts if kind == "section"]
+    if not sec_starts:
+        return story
+    bounds = sec_starts + [len(story)]
+    sec_end = {a: b for a, b in zip(bounds, bounds[1:])}
+    cut_points = sorted(i for i, _ in starts) + [len(story)]
+    out, prev = [], 0
+    for idx, (i, kind) in enumerate(starts):
+        out.extend(story[prev:i])
+        if kind == "section":
+            need = height(story[i:sec_end[i]])
+            if need > page_h:  # longer than a page: at least keep the heading with its first entry
+                nxt = cut_points[idx + 2] if idx + 2 < len(cut_points) else len(story)
+                need = height(story[i:nxt])
+        else:
+            nxt = cut_points[idx + 1]
+            need = height(story[i:nxt])
+        out.append(CondPageBreak(need))
+        prev = i
+    out.extend(story[prev:])
+    return out
 
 
 def main():
@@ -164,7 +217,14 @@ def main():
     margin = 22 * mm if letter else 19 * mm
     doc = SimpleDocTemplate(a.out, pagesize=A4, leftMargin=margin, rightMargin=margin,
                             topMargin=16 * mm, bottomMargin=15 * mm, title="", author="")
-    doc.build(story, canvasmaker=partial(Canvas, initialFontName=REG))
+    def footer(canvas, d):
+        if not letter and d.page > 1:
+            canvas.saveState()
+            canvas.setFont(REG, 8.5)
+            canvas.setFillColor(colors.HexColor("#555555"))
+            canvas.drawRightString(A4[0] - margin, 9 * mm, f"Orlaith Doyle  ·  CV  ·  page {d.page}")
+            canvas.restoreState()
+    doc.build(story, onFirstPage=footer, onLaterPages=footer, canvasmaker=partial(Canvas, initialFontName=REG))
     pages = doc.page
     print(f"wrote {a.out} ({pages} page{'s' if pages != 1 else ''})")
     limit = 1 if letter else 2
