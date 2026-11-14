@@ -644,6 +644,7 @@ const TOOLS = [
         fit: { type: "number" }, deadline: { type: "string" }, location: { type: "string" }, salary: { type: "string" },
         category: { type: "string", enum: CATEGORIES }, belowFloor: { type: "boolean" }, why: { type: "string" },
         nextStep: { type: "string" }, howToApply: { type: "string" }, link: { type: "string" },
+        applyUrl: { type: "string", description: "Most direct place to apply for this job (its own apply page if possible)" },
       },
       required: ["role", "org"],
     },
@@ -709,41 +710,48 @@ function runTool(name, input) {
       chatAdd("note", esc(`Updated ${j.org}: ${what}`));
       return `Updated job ${j.id}.`;
     }
-    if (name === "add_job") { const j = addJob(input); chatAdd("note", esc(`Added ${j.role} at ${j.org}`)); return `Added job with id ${j.id}.`; }
+    if (name === "add_job") {
+      const norm = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const dup = S.jobs.find((j) => norm(j.org) === norm(input.org) && norm(j.role) === norm(input.role));
+      if (dup) return `Already in the list as ${dup.id}; not added again.`;
+      const j = addJob(input); S.searchAdded = (S.searchAdded || 0) + 1;
+      chatAdd("note", esc(`Added ${j.role} at ${j.org}${j.fit ? ` (fit ${j.fit}/10)` : ""}`));
+      return `Added job with id ${j.id}.`;
+    }
     if (name === "remove_job") { const j = deleteJob(input.id); chatAdd("note", esc(`Removed ${j.role} at ${j.org}`)); return `Removed job ${j.id}.`; }
     return `Unknown tool ${name}`;
   } catch (e) { return `Error: ${e.message}`; }
 }
-async function callClaude() {
+async function callClaude(opts = {}) {
   const key = store.get("ja.anthropicKey");
-  const tools = S.webSearchOk ? [...TOOLS, { type: "web_search_20250305", name: "web_search", max_uses: 3 }] : TOOLS;
+  const tools = S.webSearchOk ? [...TOOLS, { type: "web_search_20250305", name: "web_search", max_uses: opts.searches || 3 }] : TOOLS;
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01",
       "anthropic-dangerous-direct-browser-access": "true",
     },
-    body: JSON.stringify({ model: store.get("ja.model") || DEFAULT_MODEL, max_tokens: 2500, system: systemPrompt(), tools, messages: S.chat }),
+    body: JSON.stringify({ model: store.get("ja.model") || DEFAULT_MODEL, max_tokens: opts.maxTokens || 2500, system: systemPrompt(), tools, messages: S.chat }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = data?.error?.message || `HTTP ${res.status}`;
-    if (S.webSearchOk && res.status === 400 && /web_search|tool/i.test(msg)) { S.webSearchOk = false; return callClaude(); }
+    if (S.webSearchOk && res.status === 400 && /web_search|tool/i.test(msg)) { S.webSearchOk = false; return callClaude(opts); }
     const e = new Error(msg); e.status = res.status; throw e;
   }
   return data;
 }
-async function sendChat(text) {
+async function sendChat(text, opts = {}) {
   if (S.chatBusy) return;
   if (!store.get("ja.anthropicKey")) { chatAdd("err", "Add your Anthropic API key in Settings first."); return; }
   S.chatBusy = true; $("chatSend").disabled = true;
   document.querySelector(".chat-suggest")?.remove();
-  chatAdd("user", md(text));
+  chatAdd("user", md(opts.display || text));
   S.chat.push({ role: "user", content: text });
-  const typing = chatAdd("typing", "Claude is thinking…");
+  const typing = chatAdd("typing", opts.busyText || "Claude is thinking…");
   try {
-    for (let turn = 0; turn < 8; turn++) {
-      const r = await callClaude();
+    for (let turn = 0; turn < (opts.turns || 8); turn++) {
+      const r = await callClaude(opts);
       S.chat.push({ role: "assistant", content: r.content });
       const text = r.content.filter((b) => b.type === "text").map((b) => b.text).join("\n\n").trim();
       if (text) chatAdd("assistant", md(text));
@@ -865,44 +873,43 @@ function wireApp() {
 }
 
 // ---------- "Search for jobs now" ----------
-// The button writes a small request file (timestamps only, nothing about jobs) to the repo.
-// The assistant's hourly task sees it, runs the full search, and emails her when it's done.
-const SEARCH_FILE = "data/search-request.json";
-const fmtTime = (iso) => new Date(iso).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-async function loadSearchState() {
-  try { S.searchReq = JSON.parse(await readFile(SEARCH_FILE)); } catch { S.searchReq = {}; }
-  renderSearchNow();
+// Runs a live web search straight away, in this browser, using her own Anthropic key (like the chat).
+// New matches are added to the list as "To review"; nothing about jobs leaves her browser except to Claude.
+const SEARCH_PROMPT = `Search the web right now for NEW job openings that match my job search criteria in my profile.
+- Cover my preferred locations first, then the others in my criteria, and look across many kinds of sources: space agencies and their contractors, job boards, companies, universities and research institutes.
+- Only include roles that are open now, with a deadline in the future or no deadline. Skip anything already in my job list (same organisation and role) and anything outside my criteria.
+- For each new match, call add_job with: status "To review", an honest fit score (1-10) against my profile, deadline (YYYY-MM-DD or empty), location, salary if stated, category, belowFloor, why (what fits and the main gaps, honestly), nextStep, howToApply, link (the job advert) and applyUrl (the most direct place to apply for that job).
+- Aim for at least three good new roles if they genuinely exist. Never inflate a fit score.
+- Finish with a short summary: what you added (best fit first, with fit scores) and which sources you checked.`;
+function renderSearchNow(state = {}) {
+  const btn = $("searchNowBtn"), msg = $("searchNowMsg");
+  btn.disabled = !!state.running;
+  btn.innerHTML = state.running ? "&#9203; Searching…" : "&#128269; Search for jobs now";
+  const last = store.get("ja.lastSearch");
+  msg.textContent = state.running ? "Searching the web now. New roles appear in the chat and on your list as they're found (usually 1 to 3 minutes)."
+    : state.note ? state.note
+    : last ? `Last search: ${new Date(last).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}. Daily search also runs at 8am.`
+    : "Searches the web right now and adds new matches to your list.";
 }
-function renderSearchNow() {
-  const r = S.searchReq || {}, btn = $("searchNowBtn"), msg = $("searchNowMsg");
-  const pending = r.requestedAt && (!r.handledAt || r.handledAt < r.requestedAt);
-  btn.disabled = !!pending;
-  btn.innerHTML = pending ? "&#9203; Search requested" : "&#128269; Search for jobs now";
-  msg.textContent = pending
-    ? `Asked ${fmtTime(r.requestedAt)}. Your assistant picks it up within the hour (8am to 10pm) and emails you the results.`
-    : r.handledAt ? `Last on-demand search: ${fmtTime(r.handledAt)}. Daily search runs at 8am.` : "Runs a full search now instead of waiting for the 8am one.";
-}
-async function requestSearch() {
-  if (!ghToken()) { setStatus("Add your GitHub key in Settings first, so the request can be saved.", true); return; }
-  const btn = $("searchNowBtn"); btn.disabled = true; btn.textContent = "Sending…";
-  try {
-    await readFile(SEARCH_FILE).catch(() => "");  // refresh the file version
-    S.searchReq = { ...(S.searchReq || {}), requestedAt: new Date().toISOString() };
-    await writeFile(SEARCH_FILE, JSON.stringify(S.searchReq, null, 2) + "\n", "Search request");
-    setStatus("Search requested. You'll get an email when it's done.");
-  } catch (e) {
-    S.searchReq.requestedAt = null;
-    setStatus(`Couldn't send the search request (${e.detail || e.message}).`, true);
-  }
-  renderSearchNow();
+async function searchNow() {
+  if (!store.get("ja.anthropicKey")) { renderSearchNow({ note: "Add your Anthropic API key in Settings first (the same key the chat uses)." }); return; }
+  if (S.chatBusy) { renderSearchNow({ note: "Claude is busy in the chat. Try again when it's finished." }); return; }
+  S.searchAdded = 0;
+  renderSearchNow({ running: true });
+  setChatOpen(true);
+  await sendChat(SEARCH_PROMPT, { searches: 15, maxTokens: 8000, turns: 20, busyText: "Searching for jobs…", display: "Search for jobs now" });
+  store.set("ja.lastSearch", new Date().toISOString());
+  const n = S.searchAdded || 0;
+  renderSearchNow({ note: n ? `Done: ${n} new role${n === 1 ? "" : "s"} added to your list (status "To review").` : "Done: no new matching roles found this time." });
+  render();
 }
 
 async function enterApp() {
   $("lockScreen").hidden = true; $("app").hidden = false;
   wireApp(); render(); idleStatus();
   routeApply();
-  $("searchNowBtn").onclick = requestSearch;
-  loadSearchState();
+  $("searchNowBtn").onclick = searchNow;
+  renderSearchNow();
   if (S.newFromInbox) setStatus(`${S.newFromInbox} update(s) from your assistant added. ` + $("statusLine").textContent);
 }
 
