@@ -885,6 +885,7 @@ const SEARCH_PROMPT = `Search the web right now for NEW job openings that match 
 // (timestamps only) that her assistant's hourly scheduled task picks up, at no extra cost. With a key
 // set in Settings it searches instantly in the browser instead (billed to that key).
 const SEARCH_FILE = "data/search-request.json";
+const CLAUDE_PROJECT = "https://claude.ai/project/01a1cffe-a312-76a5-a881-cb77b886fe51";
 const fmtTime = (iso) => new Date(iso).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 async function loadSearchState() {
   try { S.searchReq = JSON.parse(await readFile(SEARCH_FILE)); } catch { S.searchReq = {}; }
@@ -901,7 +902,10 @@ function renderSearchNow(state = {}) {
     : pending ? `Asked ${fmtTime(r.requestedAt)}. Your assistant picks it up within the hour (8am to 10pm), adds new jobs here and emails you.`
     : instant ? "Searches the web right now and adds new matches to your list."
     : r.handledAt ? `Last on-demand search: ${fmtTime(r.handledAt)}. The daily search also runs at 8am.`
-    : "Asks your assistant to run a full search now (picked up within the hour) instead of waiting for 8am.";
+    : "Queues a full search for your assistant's next hourly check.";
+  if (!instant && !state.running) {
+    msg.insertAdjacentHTML("beforeend", ` For an instant start, <a href="${CLAUDE_PROJECT}" target="_blank" rel="noopener">ask Claude to "search now"</a>.`);
+  }
 }
 async function requestSearch() {
   if (!ghToken()) { renderSearchNow({ note: "Add your GitHub key in Settings first, so the request can be saved." }); return; }
