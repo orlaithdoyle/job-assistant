@@ -691,7 +691,7 @@ function chatIntro() {
   const key = store.get("ja.anthropicKey");
   chatAdd("assistant", md(key
     ? "Hi Orlaith. Ask me about your jobs, get me to change something, or ask for a draft."
-    : "Hi Orlaith. To chat, add your Anthropic API key in **Settings** (top right). It takes about two minutes."));
+    : "Hi Orlaith. Chatting here needs a paid Anthropic API key, so for now please ask me in your **[Job assistant project in Claude](https://claude.ai/project/01a1cffe-a312-76a5-a881-cb77b886fe51)** instead. I can change jobs, write CVs and letters, and update this site from there at no extra cost."));
   if (key) {
     const s = document.createElement("div"); s.className = "chat-suggest";
     ["What should I focus on this week?", "Which deadlines are coming up?", "Help me prepare for an interview"].forEach((t) => {
@@ -881,24 +881,48 @@ const SEARCH_PROMPT = `Search the web right now for NEW job openings that match 
 - For each new match, call add_job with: status "To review", an honest fit score (1-10) against my profile, deadline (YYYY-MM-DD or empty), location, salary if stated, category, belowFloor, why (what fits and the main gaps, honestly), nextStep, howToApply, link (the job advert) and applyUrl (the most direct place to apply for that job).
 - Aim for at least three good new roles if they genuinely exist. Never inflate a fit score.
 - Finish with a short summary: what you added (best fit first, with fit scores) and which sources you checked.`;
+// Without an Anthropic API key (the normal case) the button queues a request: it writes a small file
+// (timestamps only) that her assistant's hourly scheduled task picks up, at no extra cost. With a key
+// set in Settings it searches instantly in the browser instead (billed to that key).
+const SEARCH_FILE = "data/search-request.json";
+const fmtTime = (iso) => new Date(iso).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+async function loadSearchState() {
+  try { S.searchReq = JSON.parse(await readFile(SEARCH_FILE)); } catch { S.searchReq = {}; }
+  renderSearchNow();
+}
 function renderSearchNow(state = {}) {
-  const btn = $("searchNowBtn"), msg = $("searchNowMsg");
-  btn.disabled = !!state.running;
-  btn.innerHTML = state.running ? "&#9203; Searching…" : "&#128269; Search for jobs now";
-  const last = store.get("ja.lastSearch");
-  msg.textContent = state.running ? "Searching the web now. New roles appear in the chat and on your list as they're found (usually 1 to 3 minutes)."
+  const btn = $("searchNowBtn"), msg = $("searchNowMsg"), r = S.searchReq || {};
+  const instant = !!store.get("ja.anthropicKey");
+  const pending = !instant && r.requestedAt && (!r.handledAt || r.handledAt < r.requestedAt);
+  btn.disabled = !!(state.running || pending);
+  btn.innerHTML = state.running ? "&#9203; Searching…" : pending ? "&#9203; Search requested" : "&#128269; Search for jobs now";
+  msg.textContent = state.running ? "Searching the web now. New roles appear in the chat and on your list as they're found."
     : state.note ? state.note
-    : last ? `Last search: ${new Date(last).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}. Daily search also runs at 8am.`
-    : "Searches the web right now and adds new matches to your list.";
+    : pending ? `Asked ${fmtTime(r.requestedAt)}. Your assistant picks it up within the hour (8am to 10pm), adds new jobs here and emails you.`
+    : instant ? "Searches the web right now and adds new matches to your list."
+    : r.handledAt ? `Last on-demand search: ${fmtTime(r.handledAt)}. The daily search also runs at 8am.`
+    : "Asks your assistant to run a full search now (picked up within the hour) instead of waiting for 8am.";
+}
+async function requestSearch() {
+  if (!ghToken()) { renderSearchNow({ note: "Add your GitHub key in Settings first, so the request can be saved." }); return; }
+  $("searchNowBtn").disabled = true; $("searchNowBtn").textContent = "Sending…";
+  try {
+    await readFile(SEARCH_FILE).catch(() => "");  // refresh the file version
+    S.searchReq = { ...(S.searchReq || {}), requestedAt: new Date().toISOString() };
+    await writeFile(SEARCH_FILE, JSON.stringify(S.searchReq, null, 2) + "\n", "Search request");
+    renderSearchNow();
+  } catch (e) {
+    S.searchReq.requestedAt = null;
+    renderSearchNow({ note: `Couldn't send the request (${e.detail || e.message}).` });
+  }
 }
 async function searchNow() {
-  if (!store.get("ja.anthropicKey")) { renderSearchNow({ note: "Add your Anthropic API key in Settings first (the same key the chat uses)." }); return; }
+  if (!store.get("ja.anthropicKey")) return requestSearch();
   if (S.chatBusy) { renderSearchNow({ note: "Claude is busy in the chat. Try again when it's finished." }); return; }
   S.searchAdded = 0;
   renderSearchNow({ running: true });
   setChatOpen(true);
   await sendChat(SEARCH_PROMPT, { searches: 15, maxTokens: 8000, turns: 20, busyText: "Searching for jobs…", display: "Search for jobs now" });
-  store.set("ja.lastSearch", new Date().toISOString());
   const n = S.searchAdded || 0;
   renderSearchNow({ note: n ? `Done: ${n} new role${n === 1 ? "" : "s"} added to your list (status "To review").` : "Done: no new matching roles found this time." });
   render();
@@ -909,7 +933,7 @@ async function enterApp() {
   wireApp(); render(); idleStatus();
   routeApply();
   $("searchNowBtn").onclick = searchNow;
-  renderSearchNow();
+  renderSearchNow(); loadSearchState();
   if (S.newFromInbox) setStatus(`${S.newFromInbox} update(s) from your assistant added. ` + $("statusLine").textContent);
 }
 
