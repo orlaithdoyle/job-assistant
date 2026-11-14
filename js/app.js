@@ -142,7 +142,11 @@ async function loadData() {
       try {
         const item = await C.open(S.priv, entry.blob);
         if (item.__update) {
-          const target = S.jobs.find((j) => j.id === item.__update);
+          // match by id; if the id isn't known, fall back to the same role at the same organisation
+          const norm = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+          const m = item.__match || {};
+          const target = S.jobs.find((j) => j.id === item.__update)
+            || (m.role && S.jobs.find((j) => norm(j.role) === norm(m.role) && (!m.org || norm(j.org).includes(norm(m.org)) || norm(m.org).includes(norm(j.org)))));
           if (target) { Object.assign(target, item.changes || {}); merged++; }
           continue;
         }

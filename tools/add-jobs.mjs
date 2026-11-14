@@ -42,7 +42,7 @@ for (const item of incoming) {
   if (item.update) {
     const changes = { ...(item.changes || {}) };
     await attachPdfs(item, changes, item.org || item.update);
-    inbox.push({ added: new Date().toISOString().slice(0, 10), blob: await seal(pub, { __update: item.update, changes }) });
+    inbox.push({ added: new Date().toISOString().slice(0, 10), blob: await seal(pub, { __update: item.update, __match: item.match || null, changes }) });
     updated++;
     continue;
   }
