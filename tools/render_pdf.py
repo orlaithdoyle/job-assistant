@@ -8,6 +8,7 @@ Markdown supported:
   "- item"                 bullet
   "Left || Right"          one line with Right flush right (use for job title || dates)
   "> line"                 right-aligned block (cover letter sender details)
+  "!! text"                centred bold italic closing line (e.g. References are available upon request.)
   "### Project title"      bold project heading; the next line is its paragraph (indented, justified)
   "[[cols]]" ... "[[/cols]]"  side-by-side columns: first row = bold column headings,
                            each row "left | right" (e.g. technical | professional skills)
@@ -76,6 +77,8 @@ def styles_for(theme, letter):
                                leading=t["head_size"] + 3, textColor=colors.HexColor(t["accent"]),
                                spaceBefore=11 if theme == "elegant" else 10, spaceAfter=0),
         bullet=ParagraphStyle("bullet", parent=base, spaceAfter=1.5),
+        closing=ParagraphStyle("closing", parent=base, fontName="Times-BoldItalic", fontSize=t["body"] + 1.3,
+                               leading=t["body"] + 5, alignment=TA_CENTER, spaceBefore=12, spaceAfter=0),
         proj=ParagraphStyle("proj", parent=base, fontName=BOLD, leftIndent=11, spaceBefore=4, spaceAfter=1),
         projtext=ParagraphStyle("projtext", parent=base, leftIndent=11, spaceAfter=3, alignment=4),
         colhead=ParagraphStyle("colhead", parent=base, fontName=BOLD, spaceAfter=1),
@@ -152,6 +155,10 @@ def build(md_text, theme):
         if cols is not None:
             if line.strip():
                 cols.append([c.strip() for c in line.split("|")])
+            continue
+        if line.startswith("!! "):
+            flush_para(); flush_items()
+            story.append(Paragraph(inline(line[3:]), S["closing"]))
             continue
         if line.startswith("### "):
             flush_para(); flush_items()
@@ -280,15 +287,10 @@ def main():
         story, letter = build(f.read(), a.style)
     margin = 22 * mm if letter else 19 * mm
     doc = SimpleDocTemplate(a.out, pagesize=A4, leftMargin=margin, rightMargin=margin,
-                            topMargin=16 * mm, bottomMargin=15 * mm, title="", author="")
-    def footer(canvas, d):
-        if not letter and d.page > 1:
-            canvas.saveState()
-            canvas.setFont(REG, 8.5)
-            canvas.setFillColor(colors.HexColor("#555555"))
-            canvas.drawRightString(A4[0] - margin, 9 * mm, f"Orlaith Doyle  ·  CV  ·  page {d.page}")
-            canvas.restoreState()
-    doc.build(story, onFirstPage=footer, onLaterPages=footer, canvasmaker=partial(Canvas, initialFontName=REG))
+                            topMargin=16 * mm, bottomMargin=15 * mm,
+                            title="Cover Letter, Orlaith Doyle" if letter else "CV, Orlaith Doyle",
+                            author="Orlaith Doyle", subject="", creator="", producer="")
+    doc.build(story, canvasmaker=partial(Canvas, initialFontName=REG))
     pages = doc.page
     print(f"wrote {a.out} ({pages} page{'s' if pages != 1 else ''})")
     limit = 1 if letter else 2
