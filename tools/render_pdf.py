@@ -11,8 +11,9 @@ Markdown supported:
   **bold**, *italic*, blank lines between paragraphs; single line breaks are kept.
 
 House rules: a CV is never more than 2 pages, a cover letter never more than 1.
-CV sections (and each job or degree entry) are never split across pages; if that pushes the CV
-to 3 pages it fails with TOO LONG, so shorten the text.
+Job and degree entries are never split across pages. A whole section moves to the next page only
+if that leaves a small gap (under a fifth of a page); otherwise it continues across the break so
+there is no big empty block. Past the page limit it fails with TOO LONG, so shorten the text.
 Requires: pip install reportlab
 """
 import argparse
@@ -162,6 +163,24 @@ def build(md_text, theme):
     return story, letter
 
 
+class SmartBreak(CondPageBreak):
+    """Move a section to the next page only when that leaves a small gap.
+
+    If less than `need` points remain, the section would split. Moving it is fine when the gap left
+    behind is small (under max_gap); if moving it would leave a big empty block at the bottom of the
+    page, let it split instead (individual entries are still kept whole by their own breaks).
+    """
+
+    def __init__(self, need, max_gap):
+        super().__init__(need)
+        self.max_gap = max_gap
+
+    def wrap(self, availWidth, availHeight):
+        if availHeight <= self.max_gap:
+            return super().wrap(availWidth, availHeight)
+        return 0, 0
+
+
 def keep_sections_whole(story, marks):
     """Never let a section (or a job/degree entry) start on one page and finish on the next.
 
@@ -201,7 +220,8 @@ def keep_sections_whole(story, marks):
         else:
             nxt = cut_points[idx + 1]
             need = height(story[i:nxt])
-        out.append(CondPageBreak(need))
+        # whole sections may move if the gap left is under a fifth of the page; entries always move
+        out.append(SmartBreak(need, page_h * 0.2) if kind == "section" else CondPageBreak(need))
         prev = i
     out.extend(story[prev:])
     return out
