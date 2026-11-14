@@ -175,7 +175,11 @@ async function saveJobsNow(message) {
     await writeFile("data/jobs.locked.json", JSON.stringify(blob) + "\n", message || "Update job list");
     idleStatus();
   } catch (e) {
-    setStatus(`Couldn't save to GitHub (${e.detail || e.message}). Your change is still on screen; try again.`, true);
+    const why = /not accessible by personal access token/i.test(e.detail || "")
+      ? "your GitHub key can read but not save. On GitHub, edit the key: Permissions, Contents, Read and write"
+      : e.status === 401 ? "GitHub doesn't recognise your key. Make a new one and paste it in Settings"
+      : (e.detail || e.message);
+    setStatus(`Couldn't save to GitHub: ${why}. Your change is still on screen; try again.`, true);
     throw e;
   } finally {
     S.saving = false;
